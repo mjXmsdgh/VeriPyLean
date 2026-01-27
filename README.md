@@ -1,14 +1,14 @@
 [English] [**日本語**](README.ja.md)
 
-# PyLean (Prototype v0.1)
+# VeriPyLean (Prototype v0.1)
 
 **"Human-readable Python, Machine-verifiable Lean 4."**
 
-PyLean is an experimental project that bridges the intuitive readability of Python with the mathematical rigor of Lean 4, using a shared Abstract Syntax Tree (AST).
+VeriPyLean is an experimental project that bridges the intuitive readability of Python with the mathematical rigor of Lean 4, using a shared Abstract Syntax Tree (AST).
 
 ## 🌟 Concept: "AI Writes, Math Audits"
 
-While modern AI code generation is powerful, it carries the risk of hallucinations. PyLean "translates" Python code written by humans or AI into Lean 4, using formal verification to detect logical inconsistencies before the code ever runs.
+While modern AI code generation is powerful, it carries the risk of hallucinations. VeriPyLean "translates" Python code written by humans or AI into Lean 4, using formal verification to detect logical inconsistencies before the code ever runs.
 
 * **Python View**: The frontend for humans (and AI) to write and read logic intuitively.
 * **Lean 4 View**: The backend to verify logical consistency (e.g., division by zero, type mismatches, termination) mathematically.
@@ -60,6 +60,6 @@ I have built the core concept and a minimal "chilly" prototype. To bring this vi
 ## 💬 From the Creator
 
 "Let's spend less time writing tests and more time proving correctness."
-PyLean started with this simple dream. It’s a small step, but I’m looking for developers who believe in a future where code is not just 'tested,' but 'proven.'
+VeriPyLean started with this simple dream. It’s a small step, but I’m looking for developers who believe in a future where code is not just 'tested,' but 'proven.'
 
 ---
