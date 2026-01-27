@@ -1,26 +1,28 @@
-# PyLean (Prototyping v0.1)
+[English] [**日本語**](README.ja.md)
+
+# PyLean (Prototype v0.1)
 
 **"Human-readable Python, Machine-verifiable Lean 4."**
 
-PyLeanは、Pythonの「直感的な書きやすさ」と、Lean 4の「数学的な厳密性」を、共通のAST（抽象構文木）を介して結びつける実験的なプロジェクトです。
+PyLean is an experimental project that bridges the intuitive readability of Python with the mathematical rigor of Lean 4, using a shared Abstract Syntax Tree (AST).
 
-## 🌟 Concept: 「AIが書き、数学が査読する」
+## 🌟 Concept: "AI Writes, Math Audits"
 
-現代のAIコード生成は強力ですが、ハルシネーション（もっともらしい嘘）のリスクが常にあります。PyLeanは、AIや人間が書いたPythonコードを背後でLean 4へと「直訳」し、定理証明の仕組みを使ってその正しさを数学的に検証します。
+While modern AI code generation is powerful, it carries the risk of hallucinations. PyLean "translates" Python code written by humans or AI into Lean 4, using formal verification to detect logical inconsistencies before the code ever runs.
 
-* **Python View**: 人間（およびAI）がロジックを読み書きするフロントエンド。
-* **Lean 4 View**: 実行前に論理的矛盾（0除算、型不一致、停止性など）を検証するバックエンド。
-* **AST-First**: ソースコードをテキストではなく「構造」として管理し、双方向の変換を1対1で実現します。
+* **Python View**: The frontend for humans (and AI) to write and read logic intuitively.
+* **Lean 4 View**: The backend to verify logical consistency (e.g., division by zero, type mismatches, termination) mathematically.
+* **AST-First**: By managing programs as data structures (AST) rather than just text, we ensure a reliable 1-to-1 mapping between the two languages.
 
-## 🚀 現時点でできたこと
+## 🚀 What is Working (v0.1)
 
-プロトタイプ v0.1 では、以下の変換と検証のフローが既に動作しています。
+The following flow is already functional in our minimal prototype:
 
-* [x] **四則演算の直訳**: Pythonの `+`, `-`, `*`, `//` を Lean 4 の演算子へ変換。
-* [x] **条件分岐の対応**: `if-else` 構文の再帰的な変換。
-* [x] **安全性チェック（プロトタイプ）**: 割り算が含まれる際に `if` 文によるガードがあるかを検知。
+* [x] **Arithmetic Translation**: Maps Python `+`, `-`, `*`, `//` to Lean 4 operators.
+* [x] **Conditional Logic**: Recursive translation of `if-else` blocks.
+* [x] **Safety Check (Heuristics)**: Detects division operations and warns if they are not guarded by a conditional check.
 
-### デモコードの例
+### Demo
 
 **Input (Python):**
 
@@ -40,22 +42,24 @@ def example (b : Int) : Int :=
 
 ```
 
-## 🛠 技術スタック
+## 🛠 Tech Stack
 
 * **Language**: Python 3.10+
-* **Parsing**: Standard `ast` module (Python純正の解析器)
-* **UI**: Streamlit (爆速プロトタイピング)
+* **Parsing**: Standard `ast` module (Built-in Python parser)
+* **UI**: Streamlit (For rapid prototyping)
 * **Verification (Target)**: Lean 4
 
-## 🗺 ロードマップ（手伝ってほしいこと）
+## 🗺 Roadmap (We Need Your Help!)
 
-私はこのプロジェクトのコンセプトを作り、最小限のプロトタイプを「ちまちま」作っています。このビジョンを完成させるためには、あなたの力が必要です。
+I have built the core concept and a minimal "chilly" prototype. To bring this vision to life, we need contributors who are passionate about formal methods and developer experience.
 
-1. **ASTマッピングの拡充**: リスト操作、再帰関数、ユーザー定義型への対応。
-2. **Lean 4 Kernelとの統合**: 生成されたコードを実際にLean 4へ投げ、エラーフィードバックをPython側に反映する。
-3. **AI Assist**: Pythonの曖昧な型指定を、AIを使ってLeanの厳密な型へ推論する機能。
+1. **Expanding AST Mapping**: Adding support for list operations, recursive functions, and custom types.
+2. **Lean 4 Kernel Integration**: Feeding the generated code directly into the Lean 4 compiler to pipe error feedback back to the Python view.
+3. **AI Assist**: Using LLMs to infer strict Lean types from ambiguous Python code.
 
-## 💬 開発者の想い
+## 💬 From the Creator
 
-「テストコードを書く時間を、証明する時間に変えたい。」
-そんな想いから PyLean は始まりました。まだ小さな一歩ですが、数学的に正しいコードだけが生き残る未来に共感してくれるエンジニアの参加を待っています。
+"Let's spend less time writing tests and more time proving correctness."
+PyLean started with this simple dream. It’s a small step, but I’m looking for developers who believe in a future where code is not just 'tested,' but 'proven.'
+
+---
