@@ -56,10 +56,14 @@ I have built the core concept and a minimal "chilly" prototype. To bring this vi
 1. **Expanding AST Mapping**: Adding support for list operations, recursive functions, and custom types.
 2. **Lean 4 Kernel Integration**: Feeding the generated code directly into the Lean 4 compiler to pipe error feedback back to the Python view.
 3. **AI Assist**: Using LLMs to infer strict Lean types from ambiguous Python code.
-
-## 💬 From the Creator
-
-"Let's spend less time writing tests and more time proving correctness."
-VeriPyLean started with this simple dream. It’s a small step, but I’m looking for developers who believe in a future where code is not just 'tested,' but 'proven.'
-
 ---
+
+## 🏗 The Ultimate Goal of This Project: Passing the Torch
+
+I am convinced that the concept of bridging Python and Lean 4 will become an indispensable standard in the era of AI-driven software development. However, it is impossible for me to fully realize this grand vision with my personal implementation skills alone.
+
+### 🕊️ A Request to the Community
+
+* **Independent Implementations are Welcome:** I sincerely hope that "someone who knows what they’re doing" will take this idea and start a "proper implementation" as a completely separate project or repository.
+* **Feel Free to Steal or Adapt the Idea:** You can use the name "VeriPyLean" or rename it entirely. My ultimate goal is to see this mechanism of "Mathematical Peer Review for AI-generated Code" become a reality and benefit the world.
+* **I am Content Being the "Instigator":** I provide the vision and a minimal prototype. If you feel that you can build this better than I can, please follow that intuition. The stage is yours.
