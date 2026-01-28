@@ -3,9 +3,47 @@ import streamlit as st
 import toLean
 
 
+# --- サンプルコードと解説の定義 ---
+SAMPLES = [
+    {
+        "name": "算術演算の例",
+        "code": "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c",
+        "annotation": ""
+    },
+    {
+        "name": "条件式の例",
+        "code": "def conditional_example(n):\n    return n if n != 0 else 1",
+        "annotation": ""
+    },
+    {
+        "name": "型エラーの例",
+        "code": 'def type_error_example():\n    return "hello" + 5',
+        "annotation": """
+        **解説：なぜこれがLean 4でエラーになるのか**
+
+        このコードは、Pythonでは実行時に `TypeError` となりますが、構文自体は有効です。
+
+        一方、正しく変換されたLean 4コード `("hello" + 5)` では、`String`型（文字列）と `Int`型（整数）の間で `+` 演算が定義されていないため、型エラーとしてコンパイル前に検出されます。
+
+        これは、変換プログラムの不具合ではなく、**Lean 4の厳密な型システムによるもの**です。これにより、実行前にバグを発見できます。
+        """
+    },
+    {
+        "name": "型ヒントの例",
+        "code": 'def add_strings(a: str, b: str) -> str:\n    return a + b',
+        "annotation": """
+        **解説：Pythonの型ヒントの活用**
+
+        Pythonの型ヒント（例: `a: str`, `-> str`）を読み取り、Lean 4の型定義（`a : String`, `: String`）に自動的に変換します。
+
+        これにより、より正確で安全なコードを生成できます。型ヒントがない場合は、デフォルトで `Int` 型が使用されます。
+        """
+    }
+]
+
 # --- Streamlit UI 部分 ---
 st.title("PyLean Prototype")
-st.caption("PythonをLean 4へリアルタイム変換(したい)")
+st.caption("PythonをLean 4へリアルタイム変換")
 
 # セッション状態で入力コードを管理
 if 'code_input' not in st.session_state:
@@ -19,33 +57,12 @@ with col1:
     st.subheader("Python View")
 
     st.write("サンプル:")
-    b_col1, b_col2, b_col3, b_col4, _ = st.columns([1, 1, 1, 1, 1])
-    if b_col1.button("算術演算の例"):
-        st.session_state.code_input = "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c"
-        st.session_state.annotation = ""
-    if b_col2.button("条件式の例"):
-        st.session_state.code_input = "def conditional_example(n):\n    return n if n != 0 else 1"
-        st.session_state.annotation = ""
-    if b_col3.button("型エラーの例"):
-        st.session_state.code_input = 'def type_error_example():\n    return "hello" + 5'
-        st.session_state.annotation = """
-        **解説：なぜこれがLean 4でエラーになるのか**
-
-        このコードは、Pythonでは実行時に `TypeError` となりますが、構文自体は有効です。
-
-        一方、正しく変換されたLean 4コード `("hello" + 5)` では、`String`型（文字列）と `Int`型（整数）の間で `+` 演算が定義されていないため、型エラーとしてコンパイル前に検出されます。
-
-        これは、変換プログラムの不具合ではなく、**Lean 4の厳密な型システムによるもの**です。これにより、実行前にバグを発見できます。
-        """
-    if b_col4.button("型ヒントの例"):
-        st.session_state.code_input = 'def add_strings(a: str, b: str) -> str:\n    return a + b'
-        st.session_state.annotation = """
-        **解説：Pythonの型ヒントの活用**
-
-        Pythonの型ヒント（例: `a: str`, `-> str`）を読み取り、Lean 4の型定義（`a : String`, `: String`）に自動的に変換します。
-
-        これにより、より正確で安全なコードを生成できます。型ヒントがない場合は、デフォルトで `Int` 型が使用されます。
-        """
+    # SAMPLESリストからボタンを動的に生成
+    cols = st.columns(len(SAMPLES))
+    for i, sample in enumerate(SAMPLES):
+        if cols[i].button(sample["name"]):
+            st.session_state.code_input = sample["code"]
+            st.session_state.annotation = sample["annotation"]
 
     code_input = st.text_area("Pythonコードを入力してください", 
                                key="code_input", height=200)
