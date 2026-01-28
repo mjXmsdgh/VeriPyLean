@@ -5,7 +5,7 @@ import toLean
 
 # --- Streamlit UI 部分 ---
 st.title("PyLean Prototype")
-st.caption("PythonをLean 4へリアルタイム変換")
+st.caption("PythonをLean 4へリアルタイム変換(したい)")
 
 # セッション状態で入力コードを管理
 if 'code_input' not in st.session_state:
