@@ -43,55 +43,8 @@ def translate_to_lean(node):
         op = "≠" if isinstance(node.ops[0], ast.NotEq) else "=="
         right = translate_to_lean(node.comparators[0])
         return f"{left} {op} {right}"
-
-    return "/* サポート外 */"
-
-
-def translate_to_lean_old(node):
-    # 数値 (1, 5 など)
-    if isinstance(node, ast.Constant):
-        return str(node.value)
     
-    # 変数 (n, x など)
-    elif isinstance(node, ast.Name):
-        return node.id
-    
-    # 二項演算 (a + b)
-    elif isinstance(node, ast.BinOp):
-        left = translate_to_lean(node.left)
-        right = translate_to_lean(node.right)
-        if isinstance(node.op, ast.Add):
-            return f"({left} + {right})"
-        elif isinstance(node.op, ast.Sub):
-            return f"({left} - {right})"
 
-
-    # 条件分岐 (if b != 0: ...)
-    elif isinstance(node, ast.If):
-        test = translate_to_lean(node.test)
-        body = translate_to_lean(node.body[0])  # 簡単のため1行目だけ
-        orelse = translate_to_lean(node.orelse[0]) if node.orelse else "0"
-        return f"if {test} then {body} else {orelse}"
-
-    # 比較演算 (b != 0)
-    elif isinstance(node, ast.Compare):
-        left = translate_to_lean(node.left)
-        # ops[0]がNotEqなら "!="
-        op = "≠" if isinstance(node.ops[0], ast.NotEq) else "==" 
-        right = translate_to_lean(node.comparators[0])
-        return f"{left} {op} {right}"
-
-    # 割り算 (a // b)
-    elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.FloorDiv):
-        left = translate_to_lean(node.left)
-        right = translate_to_lean(node.right)
-        return f"{left} / {right}"
-    
-    # return文
-    elif isinstance(node, ast.Return):
-        return translate_to_lean(node.value)
-    
-    return "/* サポート外の構文 */"
 
 # --- Streamlit UI 部分 ---
 st.title("PyLean Prototype")
