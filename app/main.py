@@ -47,7 +47,7 @@ st.caption("PythonをLean 4へリアルタイム変換")
 
 # セッション状態で入力コードを管理
 if 'code_input' not in st.session_state:
-    st.session_state.code_input = "return n + 5"
+    st.session_state.code_input = ""
 if 'annotation' not in st.session_state:
     st.session_state.annotation = ""
 
