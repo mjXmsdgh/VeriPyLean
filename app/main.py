@@ -80,11 +80,14 @@ with col2:
         # Lean風のテキストに変換
         lean_code = toLean.translate_to_lean(parsed_ast)
         
+        # Pythonの挙動（文字列の足し算など）をLeanで再現するためのヘルパー
+        preamble = "instance : Add String where add := String.append\n\n"
+
         # トップレベルのノードが関数定義なら、変換結果をそのまま使う
         if isinstance(parsed_ast, ast.FunctionDef):
-            st.code(lean_code, language="lean")
+            st.code(preamble + lean_code, language="lean")
         else:
-            st.code(f"def example (n : Int) : Int :=\n  {lean_code}", language="lean")
+            st.code(preamble + f"def example (n : Int) : Int :=\n  {lean_code}", language="lean")
         st.success("AST解析成功: 構文は正当です")
 
         # 注釈があれば表示
