@@ -28,6 +28,17 @@ def translate_to_lean(node):
             return f"({left} + {right})"
         elif isinstance(node.op, ast.Sub):
             return f"({left} - {right})"
+        elif isinstance(node.op, ast.Mult):
+            return f"({left} * {right})"
+        elif isinstance(node.op, ast.Mod):
+            return f"({left} % {right})"
+
+    # 条件式 (if ... else ...)
+    elif isinstance(node, ast.IfExp):
+        test = translate_to_lean(node.test)
+        body = translate_to_lean(node.body)
+        orelse = translate_to_lean(node.orelse)
+        return f"if {test} then {body} else {orelse}"
 
     # 条件分岐
     elif isinstance(node, ast.If):
@@ -44,18 +55,31 @@ def translate_to_lean(node):
         right = translate_to_lean(node.comparators[0])
         return f"{left} {op} {right}"
     
+    return "/* サポート外 */"
 
 
 # --- Streamlit UI 部分 ---
 st.title("PyLean Prototype")
 st.caption("PythonをLean 4へリアルタイム変換")
 
+# セッション状態で入力コードを管理
+if 'code_input' not in st.session_state:
+    st.session_state.code_input = "return n + 5"
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Python View")
+
+    st.write("サンプル:")
+    b_col1, b_col2, _ = st.columns([1, 1, 2])
+    if b_col1.button("算術演算の例"):
+        st.session_state.code_input = "return (a + b) * 2 - c"
+    if b_col2.button("条件式の例"):
+        st.session_state.code_input = "return a if a != 0 else 1"
+
     code_input = st.text_area("Pythonコードを入力してください", 
-                               value="return n + 5", height=200)
+                               key="code_input", height=200)
 
 with col2:
     st.subheader("Lean 4 View")
