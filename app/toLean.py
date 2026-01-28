@@ -17,8 +17,10 @@ def translate_to_lean(node):
         body = translate_to_lean(node.body[0])
         return f"def {func_name} {args} : {return_type} :=\n  {body}"
 
-    # 数値
+    # 定数（数値、文字列など）
     if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return f'"{node.value}"'  # 文字列はダブルクォートで囲む
         return str(node.value)
     
     # 変数
