@@ -1,5 +1,20 @@
 import ast
 
+# --- 型変換のヘルパー関数 ---
+def translate_type(annotation_node):
+    """Pythonの型ヒントASTノードをLeanの型文字列に変換する"""
+    if annotation_node is None:
+        return "Int"  # 型ヒントがない場合のデフォルト
+    if isinstance(annotation_node, ast.Name):
+        type_map = {
+            'int': 'Int',
+            'str': 'String',
+            'bool': 'Bool',
+            'float': 'Float', # Lean 4にはFloat型がある
+        }
+        return type_map.get(annotation_node.id, "Int") # マップにない場合はIntにフォールバック
+    return "Int" # サポート外の型ヒント形式
+
 # --- 変換ロジック (ルールベースの核) ---
 def translate_to_lean(node):
     if node is None:
@@ -8,11 +23,15 @@ def translate_to_lean(node):
     # 関数定義
     if isinstance(node, ast.FunctionDef):
         func_name = node.name
-        # 引数を (a : Int) (b : Int) ... の形式に変換
-        # 型ヒントがないので、すべて Int と仮定
-        args = " ".join([f"({arg.arg} : Int)" for arg in node.args.args])
-        # 戻り値の型も Int と仮定
-        return_type = "Int"
+        # 引数の型を解決
+        args_list = []
+        for arg in node.args.args:
+            arg_name = arg.arg
+            arg_type = translate_type(arg.annotation)
+            args_list.append(f"({arg_name} : {arg_type})")
+        args = " ".join(args_list)
+        # 戻り値の型を解決
+        return_type = translate_type(node.returns)
         # body[0] は return 文などを想定
         body = translate_to_lean(node.body[0])
         return f"def {func_name} {args} : {return_type} :=\n  {body}"
