@@ -19,9 +19,9 @@ with col1:
     st.write("サンプル:")
     b_col1, b_col2, _ = st.columns([1, 1, 2])
     if b_col1.button("算術演算の例"):
-        st.session_state.code_input = "return (a + b) * 2 - c"
+        st.session_state.code_input = "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c"
     if b_col2.button("条件式の例"):
-        st.session_state.code_input = "return a if a != 0 else 1"
+        st.session_state.code_input = "return n if n != 0 else 1"
 
     code_input = st.text_area("Pythonコードを入力してください", 
                                key="code_input", height=200)
@@ -30,13 +30,20 @@ with col2:
     st.subheader("Lean 4 View")
     try:
         # 入力を解析してAST（木構造）にする
-        # evalモードで簡易的に式としてパース
-        parsed_ast = ast.parse(code_input).body[0]
+        parsed_ast_root = ast.parse(code_input)
+        if not parsed_ast_root.body:
+            st.warning("コードが入力されていません。")
+            st.stop()
+        parsed_ast = parsed_ast_root.body[0]
         
         # Lean風のテキストに変換
         lean_code = toLean.translate_to_lean(parsed_ast)
         
-        st.code(f"def example (n : Int) : Int :=\n  {lean_code}", language="lean")
+        # トップレベルのノードが関数定義なら、変換結果をそのまま使う
+        if isinstance(parsed_ast, ast.FunctionDef):
+            st.code(lean_code, language="lean")
+        else:
+            st.code(f"def example (n : Int) : Int :=\n  {lean_code}", language="lean")
         st.success("AST解析成功: 構文は正当です")
         
     except Exception as e:

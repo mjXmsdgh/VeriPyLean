@@ -5,6 +5,18 @@ def translate_to_lean(node):
     if node is None:
         return ""
 
+    # 関数定義
+    if isinstance(node, ast.FunctionDef):
+        func_name = node.name
+        # 引数を (a : Int) (b : Int) ... の形式に変換
+        # 型ヒントがないので、すべて Int と仮定
+        args = " ".join([f"({arg.arg} : Int)" for arg in node.args.args])
+        # 戻り値の型も Int と仮定
+        return_type = "Int"
+        # body[0] は return 文などを想定
+        body = translate_to_lean(node.body[0])
+        return f"def {func_name} {args} : {return_type} :=\n  {body}"
+
     # 数値
     if isinstance(node, ast.Constant):
         return str(node.value)
@@ -15,6 +27,10 @@ def translate_to_lean(node):
     
     # Return文（中身をさらに解析）
     elif isinstance(node, ast.Return):
+        return translate_to_lean(node.value)
+
+    # 式 (ast.Expr)
+    elif isinstance(node, ast.Expr):
         return translate_to_lean(node.value)
 
     # 二項演算 (// や + など)
