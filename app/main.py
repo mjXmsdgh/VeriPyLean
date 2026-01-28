@@ -20,6 +20,7 @@ with col1:
 
     st.write("サンプル:")
     b_col1, b_col2, b_col3, _ = st.columns([1, 1, 1, 1])
+    st.session_state.annotation = ""
     if b_col1.button("算術演算の例"):
         st.session_state.code_input = "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c"
         st.session_state.annotation = ""
