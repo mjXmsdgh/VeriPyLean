@@ -17,11 +17,13 @@ with col1:
     st.subheader("Python View")
 
     st.write("サンプル:")
-    b_col1, b_col2, _ = st.columns([1, 1, 2])
+    b_col1, b_col2, b_col3, _ = st.columns([1, 1, 1, 1])
     if b_col1.button("算術演算の例"):
         st.session_state.code_input = "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c"
     if b_col2.button("条件式の例"):
-        st.session_state.code_input = "return n if n != 0 else 1"
+        st.session_state.code_input = "def conditional_example(n):\n    return n if n != 0 else 1"
+    if b_col3.button("型エラーの例"):
+        st.session_state.code_input = 'def type_error_example():\n    return "hello" + 5'
 
     code_input = st.text_area("Pythonコードを入力してください", 
                                key="code_input", height=200)
