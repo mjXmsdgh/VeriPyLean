@@ -93,18 +93,17 @@ if 'code_input' not in st.session_state:
 if 'annotation' not in st.session_state:
     st.session_state.annotation = ""
 
+# サイドバーにサンプルボタンを配置
+st.sidebar.header("サンプル選択")
+for sample in SAMPLES:
+    if st.sidebar.button(sample["name"]):
+        st.session_state.code_input = sample["code"]
+        st.session_state.annotation = sample["annotation"]
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Python View")
-
-    st.write("サンプル:")
-    # SAMPLESリストからボタンを動的に生成
-    cols = st.columns(len(SAMPLES))
-    for i, sample in enumerate(SAMPLES):
-        if cols[i].button(sample["name"]):
-            st.session_state.code_input = sample["code"]
-            st.session_state.annotation = sample["annotation"]
 
     code_input = st.text_area("Pythonコードを入力してください", 
                                key="code_input", height=200)
