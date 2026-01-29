@@ -5,15 +5,30 @@ def translate_type(annotation_node):
     """Pythonの型ヒントASTノードをLeanの型文字列に変換する"""
     if annotation_node is None:
         return "Int"  # 型ヒントがない場合のデフォルト
+
+    # 単純な名前 (int, str, List など)
     if isinstance(annotation_node, ast.Name):
         type_map = {
             'int': 'Int',
             'str': 'String',
             'bool': 'Bool',
-            'float': 'Float', # Lean 4にはFloat型がある
+            'float': 'Float',
+            'list': 'List Int', # 具象型指定がない場合
+            'List': 'List Int'
         }
-        return type_map.get(annotation_node.id, "Int") # マップにない場合はIntにフォールバック
-    return "Int" # サポート外の型ヒント形式
+        return type_map.get(annotation_node.id, "Int")  # マップにない場合はIntにフォールバック
+
+    # 構造化された型 (List[int] など)
+    if isinstance(annotation_node, ast.Subscript):
+        # valueが List かどうか確認
+        container = translate_type(annotation_node.value)
+        # 内部の型 (int など) を再帰的に取得
+        inner_type = translate_type(annotation_node.slice)
+        
+        if "List" in container:
+            return f"List {inner_type}"
+            
+    return "Int"
 
 # --- 各ASTノードに対応する変換関数 ---
 
@@ -30,6 +45,11 @@ def _translate_function_def(node):
     # body[0] は return 文などを想定
     body = translate_to_lean(node.body[0])
     return f"def {func_name} {args} : {return_type} :=\n  {body}"
+
+def _translate_list(node):
+    """ast.List をLeanのリテラルに変換"""
+    elements = [translate_to_lean(el) for el in node.elts]
+    return f"[{', '.join(elements)}]"
 
 def _translate_constant(node):
     """ast.Constant をLeanのリテラルに変換"""
@@ -122,5 +142,6 @@ def translate_to_lean(node):
     elif isinstance(node, ast.BoolOp): return _translate_bool_op(node)
     elif isinstance(node, ast.UnaryOp): return _translate_unary_op(node)
     elif isinstance(node, ast.Compare): return _translate_compare(node)
+    elif isinstance(node, ast.List): return _translate_list(node)
     
     return "/* サポート外 */"
