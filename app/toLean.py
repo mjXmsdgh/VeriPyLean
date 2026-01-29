@@ -71,7 +71,7 @@ def _translate_assign(node):
     """ast.Assign をLeanのlet定義に変換"""
     target = translate_to_lean(node.targets[0])
     value = translate_to_lean(node.value)
-    return f"let {target} := {value}"
+    return f"let {target} := {value};"
 
 def _translate_return(node):
     """ast.Return の中身を変換"""

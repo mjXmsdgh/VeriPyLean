@@ -77,7 +77,7 @@ SAMPLES = [
         ```
         Lean:
         ```lean
-        let sum_val := (x + y)
+        let sum_val := (x + y);
         ```
         """
     }
