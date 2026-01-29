@@ -62,6 +62,24 @@ SAMPLES = [
         **現在の制約:**
         現在のバージョンでは、タプルの型（例: `Int × String`）を自動で推論して関数の返り値の型に設定する機能は実装されていません。そのため、返り値の型がデフォルトの `Int` となり、生成されたLeanコードは型エラーになります。これは今後の改善点です。
         """
+    },
+    {
+        "name": "複数行の例",
+        "code": "def multiline_example(x: int, y: int) -> int:\n    sum_val = x + y\n    diff_val = x - y\n    return sum_val * diff_val",
+        "annotation": """
+        **解説：複数行ステートメントと変数定義**
+
+        関数内の代入文は Lean の `let` 式に変換されます。
+        
+        Python:
+        ```python
+        sum_val = x + y
+        ```
+        Lean:
+        ```lean
+        let sum_val := (x + y)
+        ```
+        """
     }
 ]
 

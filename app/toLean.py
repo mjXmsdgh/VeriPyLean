@@ -42,8 +42,9 @@ def _translate_function_def(node):
         args_list.append(f"({arg_name} : {arg_type})")
     args = " ".join(args_list)
     return_type = translate_type(node.returns)
-    # body[0] は return 文などを想定
-    body = translate_to_lean(node.body[0])
+    # 関数本体のステートメントを変換
+    body_lines = [translate_to_lean(stmt) for stmt in node.body]
+    body = "\n  ".join(body_lines)
     return f"def {func_name} {args} : {return_type} :=\n  {body}"
 
 def _translate_list(node):
@@ -65,6 +66,12 @@ def _translate_constant(node):
 def _translate_name(node):
     """ast.Name をLeanの識別子に変換"""
     return node.id
+
+def _translate_assign(node):
+    """ast.Assign をLeanのlet定義に変換"""
+    target = translate_to_lean(node.targets[0])
+    value = translate_to_lean(node.value)
+    return f"let {target} := {value}"
 
 def _translate_return(node):
     """ast.Return の中身を変換"""
@@ -137,6 +144,7 @@ def translate_to_lean(node):
         return ""
 
     if isinstance(node, ast.FunctionDef): return _translate_function_def(node)
+    elif isinstance(node, ast.Assign): return _translate_assign(node)
     elif isinstance(node, ast.Constant): return _translate_constant(node)
     elif isinstance(node, ast.Name): return _translate_name(node)
     elif isinstance(node, ast.Return): return _translate_return(node)
