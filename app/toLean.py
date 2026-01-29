@@ -76,13 +76,34 @@ def _translate_if(node):
     orelse = translate_to_lean(node.orelse[0]) if node.orelse else "0"
     return f"if {test} then {body} else {orelse}"
 
+def _translate_bool_op(node):
+    """ast.BoolOp をLeanの論理演算に変換 (and, or)"""
+    op_map = {ast.And: "&&", ast.Or: "||"}
+    op_symbol = op_map.get(type(node.op))
+    if not op_symbol:
+        return "/* サポート外の論理演算子 */"
+    
+    values = [translate_to_lean(v) for v in node.values]
+    return f"({f' {op_symbol} '.join(values)})"
+
+def _translate_unary_op(node):
+    """ast.UnaryOp をLeanの単項演算に変換 (not)"""
+    operand = translate_to_lean(node.operand)
+    if isinstance(node.op, ast.Not):
+        return f"(!{operand})"
+    return "/* サポート外の単項演算子 */"
+
 def _translate_compare(node):
     """ast.Compare をLeanの比較演算に変換"""
     left = translate_to_lean(node.left)
     # NOTE: 複数の比較演算子には未対応
-    op = "≠" if isinstance(node.ops[0], ast.NotEq) else "=="
+    op_map = {
+        ast.Eq: "==", ast.NotEq: "≠", ast.Lt: "<",
+        ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=",
+    }
+    op_symbol = op_map.get(type(node.ops[0]), "/* ? */")
     right = translate_to_lean(node.comparators[0])
-    return f"{left} {op} {right}"
+    return f"({left} {op_symbol} {right})"
 
 # --- 変換ロジックのメインディスパッチャ ---
 def translate_to_lean(node):
@@ -98,6 +119,8 @@ def translate_to_lean(node):
     elif isinstance(node, ast.BinOp): return _translate_bin_op(node)
     elif isinstance(node, ast.IfExp): return _translate_if_exp(node)
     elif isinstance(node, ast.If): return _translate_if(node)
+    elif isinstance(node, ast.BoolOp): return _translate_bool_op(node)
+    elif isinstance(node, ast.UnaryOp): return _translate_unary_op(node)
     elif isinstance(node, ast.Compare): return _translate_compare(node)
     
     return "/* サポート外 */"
