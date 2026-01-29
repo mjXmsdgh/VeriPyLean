@@ -51,6 +51,11 @@ def _translate_list(node):
     elements = [translate_to_lean(el) for el in node.elts]
     return f"[{', '.join(elements)}]"
 
+def _translate_tuple(node):
+    """ast.Tuple をLeanのタプルに変換"""
+    elements = [translate_to_lean(el) for el in node.elts]
+    return f"({', '.join(elements)})"
+
 def _translate_constant(node):
     """ast.Constant をLeanのリテラルに変換"""
     if isinstance(node.value, str):
@@ -143,5 +148,6 @@ def translate_to_lean(node):
     elif isinstance(node, ast.UnaryOp): return _translate_unary_op(node)
     elif isinstance(node, ast.Compare): return _translate_compare(node)
     elif isinstance(node, ast.List): return _translate_list(node)
+    elif isinstance(node, ast.Tuple): return _translate_tuple(node)
     
     return "/* サポート外 */"
