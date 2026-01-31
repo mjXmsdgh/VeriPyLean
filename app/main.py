@@ -126,10 +126,13 @@ with col2:
             preamble = ""
 
         # トップレベルのノードが関数定義なら、変換結果をそのまま使う
+        # そうでなければ、ダミーの関数(example)でラップしてLeanの構文に合わせる
         if isinstance(parsed_ast, ast.FunctionDef):
-            st.code(preamble + lean_code, language="lean")
+            final_code = preamble + lean_code
         else:
-            st.code(preamble + f"def example (n : Int) : Int :=\n  {lean_code}", language="lean")
+            final_code = preamble + f"def example (n : Int) : Int :=\n  {lean_code}"
+
+        st.code(final_code, language="lean")
         st.success("AST解析成功: 構文は正当です")
 
         # 注釈があれば表示
