@@ -83,37 +83,15 @@ SAMPLES = [
     }
 ]
 
-# --- Streamlit UI 部分 ---
-st.title("PyLean Prototype")
-st.caption("PythonをLean 4へリアルタイム変換")
-
-# セッション状態で入力コードを管理
-if 'annotation' not in st.session_state:
-    st.session_state.annotation = ""
-
-# サイドバーにサンプルボタンを配置
-st.sidebar.header("サンプル選択")
-for sample in SAMPLES:
-    if st.sidebar.button(sample["name"]):
-        st.session_state.code_input = sample["code"]
-        st.session_state.annotation = sample["annotation"]
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Python View")
-
-    code_input = st.text_area("Pythonコードを入力してください", 
-                               key="code_input", height=200)
-
-with col2:
+# --- 描画ロジックの分離 ---
+def render_lean_view(code_input):
     st.subheader("Lean 4 View")
     try:
         # 入力を解析してAST（木構造）にする
         parsed_ast_root = ast.parse(code_input)
         if not parsed_ast_root.body:
             st.warning("コードが入力されていません。")
-            st.stop()
+            return
         parsed_ast = parsed_ast_root.body[0]
         
         # Lean風のテキストに変換
@@ -141,3 +119,29 @@ with col2:
         
     except Exception as e:
         st.error(f"解析エラー: {e}")
+
+# --- Streamlit UI 部分 ---
+st.title("PyLean Prototype")
+st.caption("PythonをLean 4へリアルタイム変換")
+
+# セッション状態で入力コードを管理
+if 'annotation' not in st.session_state:
+    st.session_state.annotation = ""
+
+# サイドバーにサンプルボタンを配置
+st.sidebar.header("サンプル選択")
+for sample in SAMPLES:
+    if st.sidebar.button(sample["name"]):
+        st.session_state.code_input = sample["code"]
+        st.session_state.annotation = sample["annotation"]
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Python View")
+
+    code_input = st.text_area("Pythonコードを入力してください", 
+                               key="code_input", height=200)
+
+with col2:
+    render_lean_view(code_input)
