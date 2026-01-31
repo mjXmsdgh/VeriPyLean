@@ -119,8 +119,11 @@ with col2:
         # Lean風のテキストに変換
         lean_code = toLean.translate_to_lean(parsed_ast)
         
-        # Pythonの挙動（文字列の足し算など）をLeanで再現するためのヘルパー
-        preamble = "instance : Add String where add := String.append\n\n"
+        # 文字列操作が含まれる場合のみ、Pythonの挙動（+で結合）を再現するヘルパーを追加
+        if "String" in lean_code or '"' in lean_code:
+            preamble = "instance : Add String where add := String.append\n\n"
+        else:
+            preamble = ""
 
         # トップレベルのノードが関数定義なら、変換結果をそのまま使う
         if isinstance(parsed_ast, ast.FunctionDef):
