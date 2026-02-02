@@ -85,9 +85,14 @@ def _translate_bin_op(node):
     """ast.BinOp をLeanの二項演算に変換"""
     left = translate_to_lean(node.left)
     right = translate_to_lean(node.right)
+    
+    # Pythonの / (Div) は常にFloat除算として扱うため、明示的にFloatへキャストする
+    if isinstance(node.op, ast.Div):
+        return f"(({left} : Float) / ({right} : Float))"
+
     op_map = {
         ast.Add: "+", ast.Sub: "-", ast.Mult: "*",
-        ast.Div: "/", ast.FloorDiv: "/", ast.Mod: "%",
+        ast.FloorDiv: "/", ast.Mod: "%",
     }
     op_symbol = op_map.get(type(node.op))
     if op_symbol:

@@ -17,11 +17,18 @@ def render_lean_view(code_input):
         # Lean風のテキストに変換
         lean_code = toLean.translate_to_lean(parsed_ast)
         
-        # 文字列操作が含まれる場合のみ、Pythonの挙動（+で結合）を再現するヘルパーを追加
+        # 必要なヘルパー定義（プリアンブル）を構築
+        preamble_parts = []
+
+        # 文字列結合 (+) のサポート
         if "String" in lean_code or '"' in lean_code:
-            preamble = "instance : Add String where add := String.append\n\n"
-        else:
-            preamble = ""
+            preamble_parts.append("instance : Add String where add := String.append")
+        
+        # Float除算のための Int -> Float 自動型変換サポート
+        if "Float" in lean_code:
+            preamble_parts.append("instance : Coe Int Float where coe := Int.toFloat")
+
+        preamble = "\n\n".join(preamble_parts) + ("\n\n" if preamble_parts else "")
 
         # トップレベルのノードが関数定義なら、変換結果をそのまま使う
         # そうでなければ、ダミーの関数(example)でラップしてLeanの構文に合わせる
