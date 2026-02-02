@@ -75,5 +75,20 @@ SAMPLES = [
         let sum_val := (x + y);
         ```
         """
+    },
+    {
+        "name": "関数呼び出しの例",
+        "code": "def call_example(a: int, b: int) -> int:\n    return min(a, b) + max(a, b)",
+        "annotation": """
+        **解説：関数呼び出しの変換**
+
+        Pythonの関数呼び出し `func(arg1, arg2)` は、Leanの関数適用構文 `func arg1 arg2`（スペース区切り）に変換されます。
+
+        例:
+        Python: `min(a, b)`
+        Lean: `min a b`
+
+        引数が式の場合は、結合順序を保つために自動的に括弧で囲まれます。
+        """
     }
 ]
