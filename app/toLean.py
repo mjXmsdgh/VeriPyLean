@@ -132,15 +132,24 @@ def _translate_unary_op(node):
 
 def _translate_compare(node):
     """ast.Compare をLeanの比較演算に変換"""
-    left = translate_to_lean(node.left)
-    # NOTE: 複数の比較演算子には未対応
     op_map = {
         ast.Eq: "==", ast.NotEq: "≠", ast.Lt: "<",
         ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=",
     }
-    op_symbol = op_map.get(type(node.ops[0]), "/* ? */")
-    right = translate_to_lean(node.comparators[0])
-    return f"({left} {op_symbol} {right})"
+    
+    parts = []
+    current_left = translate_to_lean(node.left)
+    
+    for op, comparator in zip(node.ops, node.comparators):
+        current_right = translate_to_lean(comparator)
+        op_symbol = op_map.get(type(op), "/* ? */")
+        parts.append(f"({current_left} {op_symbol} {current_right})")
+        current_left = current_right
+        
+    if len(parts) == 1:
+        return parts[0]
+    
+    return f"({' && '.join(parts)})"
 
 def _translate_call(node):
     """ast.Call をLeanの関数適用に変換"""
