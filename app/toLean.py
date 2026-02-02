@@ -1,4 +1,5 @@
 import ast
+import fractions
 
 # --- 型変換のヘルパー関数 ---
 def translate_type(annotation_node):
@@ -14,6 +15,7 @@ def translate_type(annotation_node):
             'bool': 'Bool',
             'float': 'Float',
             'list': 'List Int', # 具象型指定がない場合
+            'Decimal': 'Rat',
             'List': 'List Int'
         }
         return type_map.get(annotation_node.id, "Int")  # マップにない場合はIntにフォールバック
@@ -28,6 +30,11 @@ def translate_type(annotation_node):
         if "List" in container:
             return f"List {inner_type}"
             
+    # モジュール属性 (decimal.Decimal など)
+    if isinstance(annotation_node, ast.Attribute):
+        if annotation_node.attr == 'Decimal':
+            return 'Rat'
+
     return "Int"
 
 # --- 各ASTノードに対応する変換関数 ---
@@ -67,6 +74,11 @@ def _translate_name(node):
     """ast.Name をLeanの識別子に変換"""
     return node.id
 
+def _translate_attribute(node):
+    """ast.Attribute をLeanのドット記法に変換"""
+    value = translate_to_lean(node.value)
+    return f"{value}.{node.attr}"
+
 def _translate_assign(node):
     """ast.Assign をLeanのlet定義に変換"""
     target = translate_to_lean(node.targets[0])
@@ -86,9 +98,9 @@ def _translate_bin_op(node):
     left = translate_to_lean(node.left)
     right = translate_to_lean(node.right)
     
-    # Pythonの / (Div) は常にFloat除算として扱うため、明示的にFloatへキャストする
+    # Pythonの / (Div) は型に応じて挙動が変わるため、ヘルパー関数 py_div を使用する
     if isinstance(node.op, ast.Div):
-        return f"(({left} : Float) / ({right} : Float))"
+        return f"(py_div ({left}) ({right}))"
 
     op_map = {
         ast.Add: "+", ast.Sub: "-", ast.Mult: "*",
@@ -154,6 +166,21 @@ def _translate_compare(node):
 def _translate_call(node):
     """ast.Call をLeanの関数適用に変換"""
     func_name = translate_to_lean(node.func)
+    
+    # Decimalのコンストラクタ呼び出しを特別扱いして Rat に変換
+    if func_name == "Decimal" or func_name == "decimal.Decimal":
+        if len(node.args) == 1:
+            arg = node.args[0]
+            # 文字列または数値リテラルの場合、正確な有理数に変換
+            if isinstance(arg, ast.Constant):
+                try:
+                    val = arg.value
+                    # 文字列または数値からFractionを作成
+                    f = fractions.Fraction(val)
+                    return f"({f.numerator}/{f.denominator} : Rat)"
+                except Exception:
+                    pass
+
     args = []
     for arg in node.args:
         arg_str = translate_to_lean(arg)
@@ -176,6 +203,7 @@ def translate_to_lean(node):
     elif isinstance(node, ast.Assign): return _translate_assign(node)
     elif isinstance(node, ast.Constant): return _translate_constant(node)
     elif isinstance(node, ast.Name): return _translate_name(node)
+    elif isinstance(node, ast.Attribute): return _translate_attribute(node)
     elif isinstance(node, ast.Return): return _translate_return(node)
     elif isinstance(node, ast.Expr): return _translate_expr(node)
     elif isinstance(node, ast.BinOp): return _translate_bin_op(node)

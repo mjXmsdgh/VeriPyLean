@@ -28,6 +28,15 @@ def render_lean_view(code_input):
         if "Float" in lean_code:
             preamble_parts.append("instance : Coe Int Float where coe := Int.toFloat")
 
+        # 除算 (/) のためのヘルパー型クラス定義
+        # Pythonの / は Int/Int->Float, Float/Float->Float, Decimal/Decimal->Decimal (Rat) となる
+        preamble_parts.append("""class PyDiv (α : Type) (β : outParam Type) where
+  py_div : α -> α -> β
+
+instance : PyDiv Int Float where py_div a b := (a : Float) / (b : Float)
+instance : PyDiv Float Float where py_div a b := a / b
+instance : PyDiv Rat Rat where py_div a b := a / b""")
+
         preamble = "\n\n".join(preamble_parts) + ("\n\n" if preamble_parts else "")
 
         # トップレベルのノードが関数定義なら、変換結果をそのまま使う

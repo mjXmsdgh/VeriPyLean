@@ -118,4 +118,17 @@ SAMPLES = [
         Lean: `(0 <= x) && (x < 10)`
         """
     }
+    ,
+    {
+        "name": "Decimal型の例",
+        "code": "def decimal_example() -> Decimal:\n    # 浮動小数点数では 0.1 + 0.2 != 0.3 ですが、\n    # Decimal (Leanでは Rat) なら正確に計算できます。\n    return Decimal('0.1') + Decimal('0.2')",
+        "annotation": """
+        **解説：Decimal型（固定小数点・有理数）のサポート**
+
+        Pythonの `decimal.Decimal` は、Leanの `Rat`（有理数）型にマッピングされます。
+        
+        `Decimal('0.1')` のようなコンストラクタ呼び出しは、自動的に `(1/10 : Rat)` という有理数リテラルに変換されます。
+        これにより、金融計算などで重要な「丸め誤差のない正確な計算」がLean上で検証可能になります。
+        """
+    }
 ]
