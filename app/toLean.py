@@ -137,6 +137,21 @@ def _translate_compare(node):
     right = translate_to_lean(node.comparators[0])
     return f"({left} {op_symbol} {right})"
 
+def _translate_call(node):
+    """ast.Call をLeanの関数適用に変換"""
+    func_name = translate_to_lean(node.func)
+    args = []
+    for arg in node.args:
+        arg_str = translate_to_lean(arg)
+        # 引数が関数呼び出しやif式の場合は括弧で囲む
+        if isinstance(arg, (ast.Call, ast.IfExp)):
+            arg_str = f"({arg_str})"
+        args.append(arg_str)
+    
+    if not args:
+        return func_name
+    return f"{func_name} {' '.join(args)}"
+
 # --- 変換ロジックのメインディスパッチャ ---
 def translate_to_lean(node):
     """ASTノードを解析し、対応する変換関数を呼び出す"""
@@ -157,5 +172,6 @@ def translate_to_lean(node):
     elif isinstance(node, ast.Compare): return _translate_compare(node)
     elif isinstance(node, ast.List): return _translate_list(node)
     elif isinstance(node, ast.Tuple): return _translate_tuple(node)
+    elif isinstance(node, ast.Call): return _translate_call(node)
     
     return "/* サポート外 */"
