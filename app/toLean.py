@@ -181,6 +181,19 @@ def _translate_call(node):
                 except Exception:
                     pass
 
+    # 丸め関数 (round, ceil, floor) の対応
+    if func_name in ("math.ceil", "ceil"):
+        if len(node.args) == 1:
+            return f"(py_ceil {translate_to_lean(node.args[0])})"
+
+    if func_name in ("math.floor", "floor"):
+        if len(node.args) == 1:
+            return f"(py_floor {translate_to_lean(node.args[0])})"
+
+    if func_name == "round":
+        if len(node.args) == 1:
+            return f"(py_round {translate_to_lean(node.args[0])})"
+
     args = []
     for arg in node.args:
         arg_str = translate_to_lean(arg)
@@ -237,6 +250,31 @@ def _generate_preamble(lean_code):
 instance : PyDiv Int Float where py_div a b := (a : Float) / (b : Float)
 instance : PyDiv Float Float where py_div a b := a / b
 instance : PyDiv Rat Rat where py_div a b := a / b""")
+
+    # 丸め関数 (round, ceil, floor) のためのヘルパー型クラス定義
+    preamble_parts.append("""class PyRound (α : Type) (β : outParam Type) where
+  py_ceil : α -> β
+  py_floor : α -> β
+  py_round : α -> β
+
+def Rat.floor (q : Rat) : Int := Int.fdiv q.num (q.den : Int)
+def Rat.ceil (q : Rat) : Int := -Int.fdiv (-q.num) (q.den : Int)
+def Rat.round (q : Rat) : Int :=
+  let n := Rat.floor q
+  let f := q - (n : Rat)
+  if f < (1 : Rat) / 2 then n
+  else if f > (1 : Rat) / 2 then n + 1
+  else if n % 2 == 0 then n else n + 1
+
+instance : PyRound Rat Int where
+  py_ceil := Rat.ceil
+  py_floor := Rat.floor
+  py_round := Rat.round
+
+instance : PyRound Float Int where
+  py_ceil x := (Float.ceil x).toInt
+  py_floor x := (Float.floor x).toInt
+  py_round x := (Float.round x).toInt""")
 
     return "\n\n".join(preamble_parts) + ("\n\n" if preamble_parts else "")
 

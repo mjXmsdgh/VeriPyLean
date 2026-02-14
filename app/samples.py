@@ -130,5 +130,19 @@ SAMPLES = [
         `Decimal('0.1')` のようなコンストラクタ呼び出しは、自動的に `(1/10 : Rat)` という有理数リテラルに変換されます。
         これにより、金融計算などで重要な「丸め誤差のない正確な計算」がLean上で検証可能になります。
         """
+    },
+    {
+        "name": "消費税計算（Decimal）",
+        "code": "from decimal import Decimal\nimport math\n\ndef calculate_tax_floor(price: Decimal, rate: Decimal) -> int:\n    # 消費税計算（切り捨て）\n    tax = price * rate\n    return math.floor(tax)\n\ndef calculate_tax_round(price: Decimal, rate: Decimal) -> int:\n    # 消費税計算（四捨五入・偶数丸め）\n    tax = price * rate\n    return round(tax)",
+        "annotation": """
+        **解説：Decimal型による厳密な端数処理**
+
+        金融計算では、浮動小数点数（Float）の誤差が許されないため、`Decimal` 型（Leanでは `Rat`）を使用します。
+
+        *   **切り捨て**: `math.floor()` は、Leanの `Rat.floor` に変換され、小数点以下を切り捨てて整数 (`Int`) を返します。
+        *   **丸め**: `round()` は、Leanの `Rat.round` に変換されます。これはPython 3の仕様に合わせて「偶数丸め（銀行丸め）」として実装されています。
+
+        例: `2.5` -> `2`, `3.5` -> `4`
+        """
     }
 ]
