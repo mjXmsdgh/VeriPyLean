@@ -244,7 +244,8 @@ def _generate_preamble(lean_code):
         preamble_parts.append("instance : Coe Int Float where coe := Int.toFloat")
 
     # 除算 (/) のためのヘルパー型クラス定義
-    preamble_parts.append("""class PyDiv (α : Type) (β : outParam Type) where
+    if "py_div" in lean_code:
+        preamble_parts.append("""class PyDiv (α : Type) (β : outParam Type) where
   py_div : α -> α -> β
 
 instance : PyDiv Int Float where py_div a b := (a : Float) / (b : Float)
@@ -252,7 +253,8 @@ instance : PyDiv Float Float where py_div a b := a / b
 instance : PyDiv Rat Rat where py_div a b := a / b""")
 
     # 丸め関数 (round, ceil, floor) のためのヘルパー型クラス定義
-    preamble_parts.append("""class PyRound (α : Type) (β : outParam Type) where
+    if "py_ceil" in lean_code or "py_floor" in lean_code or "py_round" in lean_code:
+        preamble_parts.append("""class PyRound (α : Type) (β : outParam Type) where
   py_ceil : α -> β
   py_floor : α -> β
   py_round : α -> β
