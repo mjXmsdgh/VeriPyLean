@@ -16,6 +16,7 @@ def translate_type(annotation_node):
             'float': 'Float',
             'list': 'List Int', # 具象型指定がない場合
             'Decimal': 'Rat',
+            'date': 'Date',
             'List': 'List Int'
         }
         return type_map.get(annotation_node.id, "Int")  # マップにない場合はIntにフォールバック
@@ -34,6 +35,8 @@ def translate_type(annotation_node):
     if isinstance(annotation_node, ast.Attribute):
         if annotation_node.attr == 'Decimal':
             return 'Rat'
+        if annotation_node.attr == 'date':
+            return 'Date'
 
     return "Int"
 
@@ -193,6 +196,12 @@ def _translate_call(node):
     if func_name == "round":
         if len(node.args) == 1:
             return f"(py_round {translate_to_lean(node.args[0])})"
+            
+    # Date constructor
+    if func_name in ("date", "datetime.date"):
+        if len(node.args) == 3:
+            args_str = [translate_to_lean(arg) for arg in node.args]
+            return f"({{ year := {args_str[0]}, month := {args_str[1]}, day := {args_str[2]} }} : Date)"
 
     args = []
     for arg in node.args:
@@ -278,6 +287,40 @@ instance : PyRound Float Int where
   py_floor x := (Float.floor x).toInt
   py_round x := (Float.round x).toInt""")
 
+    # Date型と日付計算のサポート
+    if "Date" in lean_code:
+        preamble_parts.append("""structure Date where
+  year : Int
+  month : Int
+  day : Int
+deriving Repr, BEq
+
+structure TimeDelta where
+  days : Int
+deriving Repr, BEq
+
+def is_leap (y : Int) : Bool :=
+  (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+
+def month_offset (m : Int) : Int :=
+  match m with
+  | 1 => 0 | 2 => 31 | 3 => 59 | 4 => 90 | 5 => 120 | 6 => 151
+  | 7 => 181 | 8 => 212 | 9 => 243 | 10 => 273 | 11 => 304 | 12 => 334
+  | _ => 0
+
+def Date.to_days (d : Date) : Int :=
+  let y := d.year
+  let m := d.month
+  let q := d.day
+  let lep := (y - 1) / 4 - (y - 1) / 100 + (y - 1) / 400
+  let y_days := (y - 1) * 365 + lep
+  let m_off := month_offset m
+  let leap_adj := if is_leap y && m > 2 then 1 else 0
+  y_days + m_off + leap_adj + q
+
+instance : Sub Date where
+  sub d1 d2 := { days := d1.to_days - d2.to_days }""")
+
     return "\n\n".join(preamble_parts) + ("\n\n" if preamble_parts else "")
 
 def compile_python_to_lean(code_input):
@@ -290,17 +333,22 @@ def compile_python_to_lean(code_input):
     if not parsed_ast_root.body:
         raise ValueError("コードが入力されていません。")
     
-    parsed_ast = parsed_ast_root.body[0]
+    # 複数のステートメント（関数定義など）を処理し、import文は無視する
+    lean_parts = []
+    has_func_def = False
     
-    # Lean風のテキストに変換
-    lean_code = translate_to_lean(parsed_ast)
+    for node in parsed_ast_root.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        if isinstance(node, ast.FunctionDef):
+            has_func_def = True
+        lean_parts.append(translate_to_lean(node))
     
+    lean_code = "\n\n".join(lean_parts)
     # 必要なヘルパー定義（プリアンブル）を構築
     preamble = _generate_preamble(lean_code)
 
-    # トップレベルのノードが関数定義なら、変換結果をそのまま使う
-    # そうでなければ、ダミーの関数(example)でラップしてLeanの構文に合わせる
-    if isinstance(parsed_ast, ast.FunctionDef):
+    if has_func_def:
         return preamble + lean_code
     else:
         return preamble + f"def example (n : Int) : Int :=\n  {lean_code}"

@@ -144,5 +144,16 @@ SAMPLES = [
 
         例: `2.5` -> `2`, `3.5` -> `4`
         """
+    },
+    {
+        "name": "日付計算（Actual/365）",
+        "code": "from datetime import date\n\ndef day_count_act365(start: date, end: date) -> float:\n    # 日付の差分（期間）を計算\n    delta = end - start\n    # 日数 / 365.0 で年換算\n    return delta.days / 365.0",
+        "annotation": """
+        **解説：日付計算と構造体**
+
+        Pythonの `datetime.date` は Leanの `Date` 構造体に変換されます。
+        
+        `end - start` のような日付の引き算は、Lean上で `TimeDelta` 構造体を返すように定義されており、`.days` フィールドで日数差を取得できます。
+        """
     }
 ]
