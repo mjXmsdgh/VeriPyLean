@@ -197,6 +197,15 @@ def _translate_call(node):
         if len(node.args) == 1:
             return f"(py_round {translate_to_lean(node.args[0])})"
             
+    # List built-ins
+    if func_name == "sum":
+        if len(node.args) == 1:
+            return f"(py_sum {translate_to_lean(node.args[0])})"
+    
+    if func_name == "len":
+        if len(node.args) == 1:
+            return f"(List.length {translate_to_lean(node.args[0])})"
+
     # Date constructor
     if func_name in ("date", "datetime.date"):
         if len(node.args) == 3:
@@ -214,6 +223,29 @@ def _translate_call(node):
     if not args:
         return func_name
     return f"{func_name} {' '.join(args)}"
+
+def _translate_list_comp(node):
+    """ast.ListComp をLeanの List.map/filterMap に変換"""
+    if len(node.generators) != 1:
+        return "/* 複数のジェネレータを持つリスト内包表記はサポート外です */"
+    
+    generator = node.generators[0]
+    target = translate_to_lean(generator.target)
+    iter = translate_to_lean(generator.iter)
+    elt = translate_to_lean(node.elt)
+
+    if not generator.ifs:
+        # No 'if' condition: [elt for target in iter] -> iter.map (fun target => elt)
+        return f"({iter}).map (fun {target} => {elt})"
+    else:
+        # With 'if' conditions: [elt for target in iter if cond] -> iter.filterMap (fun target => if cond then some elt else none)
+        conditions = [translate_to_lean(c) for c in generator.ifs]
+        full_condition = " && ".join(f"({c})" for c in conditions)
+        return f"({iter}).filterMap (fun {target} => if {full_condition} then some ({elt}) else none)"
+
+def _translate_for(node):
+    """ast.For は現在サポート外であることを示すコメントを返す"""
+    return "/* for ループは List.map, List.foldl, または再帰関数への変換が必要なため、現在直接の変換はサポートされていません。リスト内包表記や sum() などの高階関数の使用を検討してください。 */"
 
 # --- 変換ロジックのメインディスパッチャ ---
 def translate_to_lean(node):
@@ -237,6 +269,8 @@ def translate_to_lean(node):
     elif isinstance(node, ast.List): return _translate_list(node)
     elif isinstance(node, ast.Tuple): return _translate_tuple(node)
     elif isinstance(node, ast.Call): return _translate_call(node)
+    elif isinstance(node, ast.ListComp): return _translate_list_comp(node)
+    elif isinstance(node, ast.For): return _translate_for(node)
     
     return "/* サポート外 */"
 
@@ -260,6 +294,15 @@ def _generate_preamble(lean_code):
 instance : PyDiv Int Float where py_div a b := (a : Float) / (b : Float)
 instance : PyDiv Float Float where py_div a b := a / b
 instance : PyDiv Rat Rat where py_div a b := a / b""")
+
+    # py_sum のためのヘルパー型クラス定義
+    if "py_sum" in lean_code:
+        preamble_parts.append("""class PySum (α : Type) where
+  py_sum : List α -> α
+
+instance : PySum Int where py_sum l := l.foldl (· + ·) 0
+instance : PySum Float where py_sum l := l.foldl (· + ·) 0.0
+instance : PySum Rat where py_sum l := l.foldl (· + ·) 0""")
 
     # 丸め関数 (round, ceil, floor) のためのヘルパー型クラス定義
     if "py_ceil" in lean_code or "py_floor" in lean_code or "py_round" in lean_code:

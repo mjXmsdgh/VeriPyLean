@@ -36,6 +36,44 @@ SAMPLES = [
     }
     ,
     {
+        "name": "リスト内包表記の例",
+        "code": "def double_evens(numbers: list) -> list:\n    # 偶数のみを2倍する\n    return [n * 2 for n in numbers if n % 2 == 0]",
+        "annotation": """
+        **解説：リスト内包表記の変換**
+
+        Pythonのリスト内包表記は、Leanの `map` や `filterMap` 関数に変換されます。
+
+        *   `[f(x) for x in xs]` は `xs.map (fun x => f(x))` になります。
+        *   `if` 条件を含む `[f(x) for x in xs if cond(x)]` は、より効率的な `xs.filterMap (fun x => if cond(x) then some (f(x)) else none)` に変換されます。
+        """
+    },
+    {
+        "name": "リスト集計 (sum, len)",
+        "code": "def calculate_average(numbers: list) -> float:\n    count = len(numbers)\n    if count == 0:\n        return 0.0\n    \n    total = sum(numbers)\n    return total / count",
+        "annotation": """
+        **解説：リスト集計関数の変換**
+
+        Pythonの組み込み関数 `sum()` と `len()` は、Leanのリスト操作関数に変換されます。
+
+        *   `sum(list)` は、内部で型クラスを応用した `py_sum list` に変換され、`Int` や `Float` など様々な型のリストに対応します。
+        *   `len(list)` は、Lean標準の `List.length list` に変換されます。
+
+        この例のように、リストの合計や平均を計算するロジックを記述できます。
+        """
+    },
+    {
+        "name": "forループ（現在未サポート）",
+        "code": "def sum_with_for_loop(numbers: list) -> int:\n    total = 0\n    for x in numbers:\n        total = total + x\n    return total",
+        "annotation": """**解説：forループの変換について**
+
+現在、Pythonの命令的な `for` ループ（特に、ループ外の変数を更新するようなケース）からLeanの関数型コード（`fold` や再帰）への自動変換はサポートされていません。
+
+このような集計処理は、代わりに `sum()` 関数やリスト内包表記を使って表現することで、Leanに変換可能になります。
+
+例： `return sum(numbers)`"""
+    }
+    ,
+    {
         "name": "リストの例",
         "code": "def list_literal_example() -> list:\n    return [10, 20, 30]",
         "annotation": """
