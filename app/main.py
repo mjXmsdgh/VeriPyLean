@@ -1,5 +1,7 @@
+import sys
+import os
 import streamlit as st
-import toLean
+import to_Lean as toLean
 import samples
 
 # --- 描画ロジックの分離 ---
