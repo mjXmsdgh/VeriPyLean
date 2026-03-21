@@ -8,6 +8,21 @@ from typing import Tuple, Optional
 def _translate_function_def(node):
     """ast.FunctionDef をLeanの関数定義に変換"""
     func_name = node.name
+    
+    # Docstringの取得と処理
+    docstring = ast.get_docstring(node)
+    doc_comment = ""
+    stmts = node.body
+
+    if docstring:
+        # Leanのドキュメントコメント形式に変換
+        doc_comment = f"/-- {docstring} -/\n"
+        # docstring文をbodyの変換対象から除外（先頭の文字列リテラル式をスキップ）
+        if len(stmts) > 0 and isinstance(stmts[0], ast.Expr) and \
+           isinstance(stmts[0].value, ast.Constant) and \
+           isinstance(stmts[0].value.value, str):
+            stmts = stmts[1:]
+
     args_list = []
     for arg in node.args.args:
         arg_name = arg.arg
@@ -17,11 +32,16 @@ def _translate_function_def(node):
     return_type = types.translate_type(node.returns)
 
     # 関数本体のステートメントを変換
-    body_lines = [translate_to_lean(stmt) for stmt in node.body]
+    body_lines = [translate_to_lean(stmt) for stmt in stmts]
+
+    # 本体が空の場合（docstringのみの場合など）のフォールバック
+    if not body_lines:
+        body_lines = ["sorry"]
+
     body = "\n  ".join(body_lines)
 
     # 基本の関数定義文字列を作成
-    func_def_string = f"def {func_name} {args} : {return_type} :=\n  {body}"
+    func_def_string = f"{doc_comment}def {func_name} {args} : {return_type} :=\n  {body}"
 
     # 再帰を解析し、必要なら termination_by や警告コメントを追加
     is_recursive, termination_hint = _analyze_recursion(node)
