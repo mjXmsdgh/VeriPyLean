@@ -104,7 +104,7 @@ def _translate_bin_op(node):
 
     op_map = {
         ast.Add: "+", ast.Sub: "-", ast.Mult: "*",
-        ast.FloorDiv: "/", ast.Mod: "%",
+        ast.FloorDiv: "/", ast.Mod: "%", ast.Pow: "^",
     }
     op_symbol = op_map.get(type(node.op))
     if op_symbol:
@@ -202,6 +202,16 @@ def _translate_call(node):
     if func_name == "len":
         if len(node.args) == 1:
             return f"(List.length {translate_to_lean(node.args[0])})"
+
+    # min, max の可変長引数対応 (例: min(a, b, c) -> min a (min b c))
+    if func_name in ("min", "max"):
+        if len(node.args) >= 2:
+            args_str = [translate_to_lean(arg) for arg in node.args]
+            # 後ろから再帰的に畳み込む
+            result = args_str[-1]
+            for arg in reversed(args_str[:-1]):
+                result = f"({func_name} {arg} {result})"
+            return result
 
     # Date constructor
     if func_name in ("date", "datetime.date"):

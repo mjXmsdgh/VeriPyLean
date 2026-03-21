@@ -195,6 +195,24 @@ SAMPLES = [
         """
     },
     {
+        "name": "複利計算（Decimal, 累乗）",
+        "code": """from decimal import Decimal
+
+def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
+    # 複利計算: 元本 * (1 + 利率) ^ 年数
+    return principal * (1 + rate) ** years""",
+        "annotation": """
+        **解説：金融計算と累乗**
+
+        金融計算で重要な複利計算も、PyLeanで扱うことができます。
+
+        *   **`Decimal` -> `Rat`**: `Decimal`型はLeanの有理数(`Rat`)に変換され、計算誤差を防ぎます。
+        *   **`**` -> `^`**: Pythonの累乗演算子 `**` は、Leanの `^` 演算子に正しく変換されます。
+
+        これにより、`元本 * (1 + 利率) ^ 年数` のような数式を直接的かつ安全に表現できます。
+        """
+    },
+    {
         "name": "再帰関数（停止性証明）",
         "code": """def factorial(n: int) -> int:
     if n == 0:
