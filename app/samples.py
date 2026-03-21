@@ -193,5 +193,39 @@ SAMPLES = [
         
         `end - start` のような日付の引き算は、Lean上で `TimeDelta` 構造体を返すように定義されており、`.days` フィールドで日数差を取得できます。
         """
+    },
+    {
+        "name": "再帰関数（停止性証明）",
+        "code": """def factorial(n: int) -> int:
+    if n == 0:
+        return 1
+    else:
+        return n * factorial(n - 1)""",
+        "annotation": """
+        **解説：再帰関数の停止性証明**
+
+        Pythonの再帰関数は、Leanの再帰関数に変換されます。
+        Leanでは、再帰関数が必ず停止する（無限ループにならない）ことを証明する必要があります。
+
+        この例では、再帰呼び出し `factorial(n - 1)` で引数 `n` が減少していることをPyLeanが自動で検出し、Leanコードに `termination_by n` という句を追加して停止性を証明します。
+        """
+    },
+    {
+        "name": "再帰関数（複雑なケース）",
+        "code": """def ackermann(m: int, n: int) -> int:
+    if m == 0:
+        return n + 1
+    elif n == 0:
+        return ackermann(m - 1, 1)
+    else:
+        return ackermann(m - 1, ackermann(m, n - 1))""",
+        "annotation": """
+        **解説：複雑な再帰と停止性**
+
+        アッカーマン関数のように、複数の引数にまたがる複雑な再帰や、引数が単純に減少しないケースでは、PyLeanは停止性を自動で証明できません。
+
+        その場合、警告コメントが生成され、手動で `termination_by` 句を記述する必要があることを示します。
+        この例では `termination_by m n` のように、辞書式順序で引数が減少することを手動で指定する必要があります。
+        """
     }
 ]

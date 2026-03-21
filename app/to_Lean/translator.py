@@ -1,6 +1,7 @@
 import ast
 import fractions
 from . import types
+from typing import Tuple, Optional
 
 # --- 各ASTノードに対応する変換関数 ---
 
@@ -14,10 +15,24 @@ def _translate_function_def(node):
         args_list.append(f"({arg_name} : {arg_type})")
     args = " ".join(args_list)
     return_type = types.translate_type(node.returns)
+
     # 関数本体のステートメントを変換
     body_lines = [translate_to_lean(stmt) for stmt in node.body]
     body = "\n  ".join(body_lines)
-    return f"def {func_name} {args} : {return_type} :=\n  {body}"
+
+    # 基本の関数定義文字列を作成
+    func_def_string = f"def {func_name} {args} : {return_type} :=\n  {body}"
+
+    # 再帰を解析し、必要なら termination_by や警告コメントを追加
+    is_recursive, termination_hint = _analyze_recursion(node)
+    if is_recursive:
+        if termination_hint:
+            func_def_string += f"\ntermination_by {termination_hint}"
+        else:
+            comment = "-- [PyLean] Warning: Could not automatically determine termination measure. A 'termination_by' clause may be required."
+            func_def_string = f"{comment}\n{func_def_string}"
+
+    return func_def_string
 
 def _translate_list(node):
     """ast.List をLeanのリテラルに変換"""
@@ -235,3 +250,47 @@ def translate_to_lean(node):
     elif isinstance(node, ast.For): return _translate_for(node)
     
     return "/* サポート外 */"
+
+def _analyze_recursion(func_def_node: ast.FunctionDef) -> Tuple[bool, Optional[str]]:
+    """
+    関数定義ASTを解析し、再帰呼び出しの有無と停止性のヒントを返す。
+    戻り値: (is_recursive: bool, hint: str | None)
+    """
+    func_name = func_def_node.name
+    
+    class RecursionVisitor(ast.NodeVisitor):
+        def __init__(self):
+            self.is_recursive = False
+            self.hint: Optional[str] = None
+
+        def visit_Call(self, node: ast.Call):
+            # 自分自身を呼び出しているか？
+            if isinstance(node.func, ast.Name) and node.func.id == func_name:
+                self.is_recursive = True
+                
+                # 既にヒントを見つけていれば何もしない
+                if self.hint:
+                    self.generic_visit(node)
+                    return
+
+                # 引数と元の引数名を対応付ける
+                for i, arg_node in enumerate(node.args):
+                    if i < len(func_def_node.args.args):
+                        param_name = func_def_node.args.args[i].arg
+                        
+                        # 引数が `param - C` (Cは正の整数) の形かチェック
+                        if (isinstance(arg_node, ast.BinOp) and
+                            isinstance(arg_node.left, ast.Name) and
+                            arg_node.left.id == param_name and
+                            isinstance(arg_node.op, ast.Sub) and
+                            isinstance(arg_node.right, ast.Constant) and
+                            isinstance(arg_node.right.value, int) and
+                            arg_node.right.value > 0):
+                            
+                            self.hint = param_name
+            
+            self.generic_visit(node)
+
+    visitor = RecursionVisitor()
+    visitor.visit(func_def_node)
+    return visitor.is_recursive, visitor.hint
