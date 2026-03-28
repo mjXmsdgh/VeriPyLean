@@ -318,13 +318,16 @@ def _translate_list_comp(node):
         
         if not gen.ifs:
             if len(gens) == 1:
+                # [elt for x in xs] -> xs.map (fun x => elt)
                 return f"({iter_val}).map (fun {target} => {inner_lean})"
             else:
+                # [elt for x in xs for y in ys] -> xs.flatMap (fun x => [elt for y in ys])
                 return f"({iter_val}).flatMap (fun {target} => {inner_lean})"
         else:
             conds = [translate_to_lean(c) for c in gen.ifs]
             full_cond = " && ".join(f"({c})" for c in conds)
             if len(gens) == 1:
+                # [elt for x in xs if cond] -> xs.filterMap (fun x => if cond then some elt else none)
                 return f"({iter_val}).filterMap (fun {target} => if {full_cond} then some ({inner_lean}) else none)"
             else:
                 # 途中のジェネレータに条件がある場合は filter してから flatMap

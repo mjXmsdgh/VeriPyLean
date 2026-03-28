@@ -80,11 +80,7 @@ def aggregate_account_balance(entries: List[JournalEntry], account_code: str) ->
     【アルゴリズム】: 
         1. 各Entryから対象科目のLineを抽出。
         2. 科目のnormal_side（定位置）と同じならプラス、逆ならマイナスとして合算。
-    【制限】: translator.pyがネストした内包表記をサポートしていないため、平坦なリストを前提とするか、
-             呼び出し側でリストを結合する運用を想定。
     """
-    # 簡略化のため、単一のEntry内での集計ロジックを示す
-    # (複数Entryの集計は、現在のtranslatorの制約上、Python側でflatなリストを作る必要がある)
     return sum([
         line.amount if line.side == line.account.normal_side else -line.amount
         for entry in entries for line in entry.lines if line.account.code == account_code
