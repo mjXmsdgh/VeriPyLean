@@ -19,6 +19,9 @@ def compile_python_to_lean(code_input):
     for node in parsed_ast_root.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
+        if isinstance(node, ast.Assert):
+            lean_parts.append(f"example : {translator.translate_to_lean(node.test)} := by\n  sorry")
+            continue
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
             has_top_level_def = True
         lean_parts.append(translator.translate_to_lean(node))

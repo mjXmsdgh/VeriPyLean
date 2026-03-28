@@ -31,6 +31,10 @@ def _translate_function_def(node):
     args = " ".join(args_list)
     return_type = types.translate_type(node.returns)
 
+    # 定理化の判定: verify_ または theorem_ で始まる関数は theorem として扱う
+    is_theorem = func_name.startswith("verify_") or func_name.startswith("theorem_")
+    keyword = "theorem" if is_theorem else "def"
+
     # 関数本体のステートメントを変換
     body_lines = [translate_to_lean(stmt) for stmt in stmts]
 
@@ -38,10 +42,19 @@ def _translate_function_def(node):
     if not body_lines:
         body_lines = ["sorry"]
 
-    body = "\n  ".join(body_lines)
-
-    # 基本の関数定義文字列を作成
-    func_def_string = f"{doc_comment}def {func_name} {args} : {return_type} :=\n  {body}"
+    if is_theorem:
+        # 定理の場合、最後の return 式を命題 (Type) とし、本体を証明 (by sorry) にする
+        prop_expr = "True"
+        if isinstance(stmts[-1], ast.Return):
+            prop_expr = translate_to_lean(stmts[-1].value)
+            body_lines = body_lines[:-1]
+        
+        body = "\n  ".join(body_lines + ["by sorry"])
+        func_def_string = f"{doc_comment}{keyword} {func_name} {args} : {prop_expr} :=\n  {body}"
+    else:
+        body = "\n  ".join(body_lines)
+        # 基本の関数定義文字列を作成
+        func_def_string = f"{doc_comment}{keyword} {func_name} {args} : {return_type} :=\n  {body}"
 
     # 再帰を解析し、必要なら termination_by や警告コメントを追加
     is_recursive, termination_hint = _analyze_recursion(node)
@@ -59,6 +72,13 @@ def _translate_class_def(node):
     # Enum (列挙型) の判定
     is_enum = any(isinstance(base, ast.Name) and base.id == "Enum" for base in node.bases)
     
+    # dataclass の判定 (@dataclass または @dataclass(...))
+    is_dataclass = any(
+        (isinstance(dec, ast.Name) and dec.id == "dataclass") or
+        (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name) and dec.func.id == "dataclass")
+        for dec in node.decorator_list
+    )
+    
     if is_enum:
         enum_name = node.name
         variants = []
@@ -75,6 +95,23 @@ def _translate_class_def(node):
         
         variants_str = "\n".join(variants)
         return f"inductive {enum_name} where\n{variants_str}\nderiving Repr, BEq"
+
+    elif is_dataclass:
+        struct_name = node.name
+        fields = []
+        for stmt in node.body:
+            # Docstringのスキップ
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
+                continue
+            
+            # 型注釈付きのフィールド定義 (AnnAssign) を抽出
+            if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                field_name = stmt.target.id
+                field_type = types.translate_type(stmt.annotation)
+                fields.append(f"  {field_name} : {field_type}")
+        
+        fields_str = "\n".join(fields)
+        return f"structure {struct_name} where\n{fields_str}\nderiving Repr, BEq"
     
     return "/* サポート外のクラス定義です（現在はEnumのみサポート） */"
 
@@ -108,6 +145,11 @@ def _translate_assign(node):
     target = translate_to_lean(node.targets[0])
     value = translate_to_lean(node.value)
     return f"let {target} := {value};"
+
+def _translate_assert(node):
+    """ast.Assert をLeanの have 文に変換"""
+    test = translate_to_lean(node.test)
+    return f"have : {test} := by sorry"
 
 def _translate_return(node):
     """ast.Return の中身を変換"""
@@ -217,6 +259,14 @@ def _translate_call(node):
     if func_name == "round":
         if len(node.args) == 1:
             return f"(py_round {translate_to_lean(node.args[0])})"
+
+    # Decimal.quantize(..., rounding=ROUND_HALF_UP) の簡易対応
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "quantize":
+        target = translate_to_lean(node.func.value)
+        # キーワード引数 rounding をチェック
+        is_half_up = any(kw.arg == "rounding" and isinstance(kw.value, ast.Name) and kw.value.id == "ROUND_HALF_UP" for kw in node.keywords)
+        if is_half_up:
+            return f"(py_round_half_up {target})"
             
     # List built-ins
     if func_name == "sum":
@@ -256,23 +306,31 @@ def _translate_call(node):
     return f"{func_name} {' '.join(args)}"
 
 def _translate_list_comp(node):
-    """ast.ListComp をLeanの List.map/filterMap に変換"""
-    if len(node.generators) != 1:
-        return "/* 複数のジェネレータを持つリスト内包表記はサポート外です */"
-    
-    generator = node.generators[0]
-    target = translate_to_lean(generator.target)
-    iter = translate_to_lean(generator.iter)
-    elt = translate_to_lean(node.elt)
+    """ast.ListComp をLeanの List.flatMap/map/filterMap に再帰的に変換"""
+    def build_comp(gens, elt_lean):
+        if not gens:
+            return elt_lean
+        
+        gen = gens[0]
+        target = translate_to_lean(gen.target)
+        iter_val = translate_to_lean(gen.iter)
+        inner_lean = build_comp(gens[1:], elt_lean)
+        
+        if not gen.ifs:
+            if len(gens) == 1:
+                return f"({iter_val}).map (fun {target} => {inner_lean})"
+            else:
+                return f"({iter_val}).flatMap (fun {target} => {inner_lean})"
+        else:
+            conds = [translate_to_lean(c) for c in gen.ifs]
+            full_cond = " && ".join(f"({c})" for c in conds)
+            if len(gens) == 1:
+                return f"({iter_val}).filterMap (fun {target} => if {full_cond} then some ({inner_lean}) else none)"
+            else:
+                # 途中のジェネレータに条件がある場合は filter してから flatMap
+                return f"({iter_val}).filter (fun {target} => {full_cond}).flatMap (fun {target} => {inner_lean})"
 
-    if not generator.ifs:
-        # No 'if' condition: [elt for target in iter] -> iter.map (fun target => elt)
-        return f"({iter}).map (fun {target} => {elt})"
-    else:
-        # With 'if' conditions: [elt for target in iter if cond] -> iter.filterMap (fun target => if cond then some elt else none)
-        conditions = [translate_to_lean(c) for c in generator.ifs]
-        full_condition = " && ".join(f"({c})" for c in conditions)
-        return f"({iter}).filterMap (fun {target} => if {full_condition} then some ({elt}) else none)"
+    return build_comp(node.generators, translate_to_lean(node.elt))
 
 def _translate_for(node):
     """ast.For は現在サポート外であることを示すコメントを返す"""
@@ -291,6 +349,7 @@ def translate_to_lean(node):
     elif isinstance(node, ast.Name): return _translate_name(node)
     elif isinstance(node, ast.Attribute): return _translate_attribute(node)
     elif isinstance(node, ast.Return): return _translate_return(node)
+    elif isinstance(node, ast.Assert): return _translate_assert(node)
     elif isinstance(node, ast.Expr): return _translate_expr(node)
     elif isinstance(node, ast.BinOp): return _translate_bin_op(node)
     elif isinstance(node, ast.IfExp): return _translate_if_exp(node)

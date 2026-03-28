@@ -9,7 +9,8 @@ def generate(lean_code_body):
     uses_ceil = "py_ceil" in lean_code_body
     uses_round = "py_round" in lean_code_body
     uses_sum = "py_sum" in lean_code_body
-    uses_rat = "Rat" in lean_code_body or uses_floor or uses_ceil or uses_round
+    uses_half_up = "py_round_half_up" in lean_code_body
+    uses_rat = "Rat" in lean_code_body or uses_floor or uses_ceil or uses_round or uses_half_up
 
     # インポート文の構築
     imports = ["import Lean"]
@@ -54,6 +55,9 @@ def py_div {α β} [PyDiv α β] (a : α) (b : β) : Float := PyDiv.py_div a b""
         math_helpers.append("def py_ceil (x : Rat) : Int := x.ceil")
     if uses_round:
         math_helpers.append("def py_round (x : Rat) : Int := x.round")
+    if uses_half_up:
+        # 四捨五入: x + 1/2 を床関数に通す (xが正の場合)
+        math_helpers.append("def py_round_half_up (x : Rat) : Int := (x + 1/2).floor")
     
     if math_helpers:
         sections.append("\n".join(math_helpers))
