@@ -54,6 +54,30 @@ def _translate_function_def(node):
 
     return func_def_string
 
+def _translate_class_def(node):
+    """ast.ClassDef をLeanの型定義に変換"""
+    # Enum (列挙型) の判定
+    is_enum = any(isinstance(base, ast.Name) and base.id == "Enum" for base in node.bases)
+    
+    if is_enum:
+        enum_name = node.name
+        variants = []
+        for stmt in node.body:
+            # Docstringのスキップ
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
+                continue
+            
+            # 変数割り当て（Enumの各要素）を抽出
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        variants.append(f"  | {target.id}")
+        
+        variants_str = "\n".join(variants)
+        return f"inductive {enum_name} where\n{variants_str}\nderiving Repr, BEq"
+    
+    return "/* サポート外のクラス定義です（現在はEnumのみサポート） */"
+
 def _translate_list(node):
     """ast.List をLeanのリテラルに変換"""
     elements = [translate_to_lean(el) for el in node.elts]
@@ -261,6 +285,7 @@ def translate_to_lean(node):
         return ""
 
     if isinstance(node, ast.FunctionDef): return _translate_function_def(node)
+    elif isinstance(node, ast.ClassDef): return _translate_class_def(node)
     elif isinstance(node, ast.Assign): return _translate_assign(node)
     elif isinstance(node, ast.Constant): return _translate_constant(node)
     elif isinstance(node, ast.Name): return _translate_name(node)

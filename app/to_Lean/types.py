@@ -19,7 +19,7 @@ def translate_type(node):
             "Decimal": "Rat",    # Decimalは有理数(Rat)へ
             "date": "Date"       # datetime.dateはDate構造体へ
         }
-        return mapping.get(node.id, "Int")
+        # マッピングにない場合は、カスタム型（EnumやStructure）とみなしてそのまま返す
+        return mapping.get(node.id, node.id)
     
-    # 複雑な型や未対応の型はデフォルトで Int を返す
     return "Int"
