@@ -12,19 +12,21 @@ def compile_python_to_lean(code_input):
     if not parsed_ast_root.body:
         raise ValueError("コードが入力されていません。")
     
+    # 解析フェーズ: AST全体を走査してメタデータを収集
+    context = translator.analyze(parsed_ast_root)
+    
     # 複数のステートメント（関数定義など）を処理し、import文は無視する
     lean_parts = []
     has_top_level_def = False
-    
     for node in parsed_ast_root.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
         if isinstance(node, ast.Assert):
-            lean_parts.append(f"example : {translator.translate_to_lean(node.test)} := by\n  sorry")
+            lean_parts.append(f"example : {translator.translate_to_lean(node.test, context)} := by\n  sorry")
             continue
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
             has_top_level_def = True
-        lean_parts.append(translator.translate_to_lean(node))
+        lean_parts.append(translator.translate_to_lean(node, context))
     
     lean_code = "\n\n".join(lean_parts)
     # 必要なヘルパー定義（プリアンブル）を構築

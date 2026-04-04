@@ -3,10 +3,19 @@ import fractions
 from . import types
 from typing import Tuple, Optional
 
-def translate_to_lean(node):
+def translate_to_lean(node, context=None):
     """ASTノードを解析し、対応する変換を呼び出す (Entry Point)"""
     if node is None: return ""
-    return LeanTranslator().visit(node)
+    if context is None:
+        # 個別ノードの変換でも最小限の解析を行う
+        context = analyze(node)
+    return LeanTranslator(context).visit(node)
+
+def analyze(node):
+    """ASTを解析して変換に必要なメタデータを作成する"""
+    context = TranslationContext()
+    AnalysisVisitor(context).visit(node)
+    return context
 
 # --- 宣言的なマッピングの定義 ---
 
@@ -38,9 +47,63 @@ UNARY_OPS = {
     ast.USub: "-",
 }
 
+class TranslationContext:
+    """変換中に参照されるメタデータ情報を保持する"""
+    def __init__(self):
+        self.functions = {}  # name -> {"is_recursive": bool, "hint": str}
+        self.classes = {}    # name -> "enum" | "structure"
+
+class AnalysisVisitor(ast.NodeVisitor):
+    """生成前にASTを走査して情報を収集する"""
+    def __init__(self, context):
+        self.context = context
+
+    def visit_ClassDef(self, node):
+        is_enum = any(isinstance(b, ast.Name) and b.id == "Enum" for b in node.bases)
+        is_dc = any((isinstance(d, ast.Name) and d.id == "dataclass") or 
+                    (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass") 
+                    for d in node.decorator_list)
+        if is_enum: self.context.classes[node.name] = "enum"
+        elif is_dc: self.context.classes[node.name] = "structure"
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node):
+        # 再帰解析
+        is_rec, hint = self._check_recursion(node)
+        self.context.functions[node.name] = {"is_recursive": is_rec, "hint": hint}
+        self.generic_visit(node)
+
+    def _check_recursion(self, func_node):
+        """関数内の再帰呼び出しを判定する"""
+        func_name = func_node.name
+        res = {"is_recursive": False, "hint": None}
+        
+        class RecursionChecker(ast.NodeVisitor):
+            def visit_Call(self, call_node):
+                if isinstance(call_node.func, ast.Name) and call_node.func.id == func_name:
+                    res["is_recursive"] = True
+                    # 停止性ヒントの簡易抽出 (n - 1 などのパターン)
+                    for i, arg in enumerate(call_node.args):
+                        if (isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Sub) and 
+                            isinstance(arg.left, ast.Name) and i < len(func_node.args.args) and
+                            arg.left.id == func_node.args.args[i].arg):
+                            res["hint"] = arg.left.id
+                self.generic_visit(call_node)
+        
+        RecursionChecker().visit(func_node)
+        return res["is_recursive"], res["hint"]
+
 class LeanTranslator(ast.NodeVisitor):
     """ASTを巡回してLeanコードを生成するビジター"""
+    def __init__(self, context):
+        self.context = context
+
     def generic_visit(self, node): return "/* サポート外 */"
+
+    def _v(self, node):
+        """再帰的な変換のヘルパー"""
+        if node is None: return ""
+        return self.visit(node)
 
     def _extract_doc_and_body(self, node):
         """ノードからdocstringを除去した本体ステートメントを返す"""
@@ -57,7 +120,7 @@ class LeanTranslator(ast.NodeVisitor):
 
     def _wrap_if_complex(self, arg_node):
         """結合順序が紛らわしい式（CallやIfExp）を括弧で囲む"""
-        lean_str = translate_to_lean(arg_node)
+        lean_str = self._v(arg_node)
         if isinstance(arg_node, (ast.Call, ast.IfExp)):
             return f"({lean_str})"
         return lean_str
@@ -66,59 +129,55 @@ class LeanTranslator(ast.NodeVisitor):
         doc, stmts = self._extract_doc_and_body(node)
         args = self._format_args(node.args)
         is_thm = node.name.startswith(("verify_", "theorem_"))
-        
-        return self._build_function_or_theorem(node, doc, stmts, args, is_thm)
+        meta = self.context.functions.get(node.name, {})
+        return self._build_function_or_theorem(node, doc, stmts, args, is_thm, meta)
 
     def visit_ClassDef(self, node):
         """クラス定義をEnumまたはStructure(Dataclass)として変換する"""
-        is_enum = any(isinstance(b, ast.Name) and b.id == "Enum" for b in node.bases)
-        is_dc = any((isinstance(d, ast.Name) and d.id == "dataclass") or 
-                    (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass") 
-                    for d in node.decorator_list)
-
-        if is_enum:
+        kind = self.context.classes.get(node.name)
+        if kind == "enum":
             return self._translate_enum(node)
-        if is_dc:
+        if kind == "structure":
             return self._translate_structure(node)
         return "/* サポート外のクラス定義 */"
 
-    def visit_Assign(self, node): return f"let {translate_to_lean(node.targets[0])} := {translate_to_lean(node.value)};"
+    def visit_Assign(self, node): return f"let {self._v(node.targets[0])} := {self._v(node.value)};"
     def visit_Constant(self, node): return f'"{node.value}"' if isinstance(node.value, str) else str(node.value)
     def visit_Name(self, node): return node.id
-    def visit_Attribute(self, node): return f"{translate_to_lean(node.value)}.{node.attr}"
-    def visit_Return(self, node): return translate_to_lean(node.value)
-    def visit_Assert(self, node): return f"have : {translate_to_lean(node.test)} := by sorry"
-    def visit_Expr(self, node): return translate_to_lean(node.value)
+    def visit_Attribute(self, node): return f"{self._v(node.value)}.{node.attr}"
+    def visit_Return(self, node): return self._v(node.value)
+    def visit_Assert(self, node): return f"have : {self._v(node.test)} := by sorry"
+    def visit_Expr(self, node): return self._v(node.value)
     def visit_BinOp(self, node):
-        l, r = translate_to_lean(node.left), translate_to_lean(node.right)
+        l, r = self._v(node.left), self._v(node.right)
         if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
         op = BIN_OPS.get(type(node.op))
         return f"({l} {op} {r})" if op else "/* サポート外 */"
-    def visit_IfExp(self, node): return f"if {translate_to_lean(node.test)} then {translate_to_lean(node.body)} else {translate_to_lean(node.orelse)}"
+    def visit_IfExp(self, node): return f"if {self._v(node.test)} then {self._v(node.body)} else {self._v(node.orelse)}"
     def visit_If(self, node):
-        orelse = translate_to_lean(node.orelse[0]) if node.orelse else "0"
-        return f"if {translate_to_lean(node.test)} then {translate_to_lean(node.body[0])} else {orelse}"
+        orelse = self._v(node.orelse[0]) if node.orelse else "0"
+        return f"if {self._v(node.test)} then {self._v(node.body[0])} else {orelse}"
     def visit_BoolOp(self, node):
         op = BOOL_OPS.get(type(node.op), "??")
-        return f"({(f' {op} ').join([translate_to_lean(v) for v in node.values])})"
+        return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
     def visit_UnaryOp(self, node):
         op = UNARY_OPS.get(type(node.op))
-        return f"({op}{translate_to_lean(node.operand)})" if op else "/* サポート外 */"
+        return f"({op}{self._v(node.operand)})" if op else "/* サポート外 */"
     def visit_Compare(self, node):
-        parts, curr = [], translate_to_lean(node.left)
+        parts, curr = [], self._v(node.left)
         for op, comp in zip(node.ops, node.comparators):
-            next_v = translate_to_lean(comp)
+            next_v = self._v(comp)
             parts.append(f"({curr} {COMP_OPS.get(type(op), '?')} {next_v})")
             curr = next_v
         return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
-    def visit_List(self, node): return f"[{', '.join([translate_to_lean(e) for e in node.elts])}]"
-    def visit_Tuple(self, node): return f"({', '.join([translate_to_lean(e) for e in node.elts])})"
+    def visit_List(self, node): return f"[{', '.join([self._v(e) for e in node.elts])}]"
+    def visit_Tuple(self, node): return f"({', '.join([self._v(e) for e in node.elts])})"
 
     def visit_Call(self, node):
-        fn = translate_to_lean(node.func)
+        fn = self._v(node.func)
         h = _BUILTIN_CALL_HANDLERS.get(fn) or (isinstance(node.func, ast.Attribute) and _METHOD_CALL_HANDLERS.get(node.func.attr))
         if h:
-            res = h(node)
+            res = h(node, self)
             if res: return res
         args = [self._wrap_if_complex(a) for a in node.args]
         return fn if not args else f"{fn} {' '.join(args)}"
@@ -145,40 +204,39 @@ class LeanTranslator(ast.NodeVisitor):
     def _translate_list_comp_recursive(self, generators, elt):
         """リスト内包表記をLeanのmap/flatMap/filterMapチェーンに再帰的に変換"""
         if not generators:
-            return translate_to_lean(elt)
+            return self._v(elt)
         
         gen, *rest = generators
         inner = self._translate_list_comp_recursive(rest, elt)
-        target = translate_to_lean(gen.target)
-        iterable = translate_to_lean(gen.iter)
+        target = self._v(gen.target)
+        iterable = self._v(gen.iter)
         
         if not gen.ifs:
             method = "map" if not rest else "flatMap"
             return f"({iterable}).{method} (fun {target} => {inner})"
         
-        cond = " && ".join(f"({translate_to_lean(c)})" for c in gen.ifs)
+        cond = " && ".join(f"({self._v(c)})" for c in gen.ifs)
         if not rest:
             return f"({iterable}).filterMap (fun {target} => if {cond} then some ({inner}) else none)"
         else:
             return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
 
-    def _build_function_or_theorem(self, node, doc, stmts, args, is_thm):
+    def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
         """関数または定理のLean定義文字列を組み立てる"""
-        body_lines = [translate_to_lean(s) for s in stmts] or ["sorry"]
+        body_lines = [self._v(s) for s in stmts] or ["sorry"]
         doc_prefix = f"/-- {doc} -/\n" if doc else ""
         
         if is_thm:
             # 定理の場合は最後のReturnを命題として抽出
             is_ret = isinstance(stmts[-1], ast.Return)
-            prop = translate_to_lean(stmts[-1].value) if is_ret else "True"
+            prop = self._v(stmts[-1].value) if is_ret else "True"
             if is_ret: body_lines = body_lines[:-1]
             res = f"{doc_prefix}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
         else:
             ret_type = types.translate_type(node.returns)
             res = f"{doc_prefix}def {node.name} {args} : {ret_type} :=\n  " + "\n  ".join(body_lines)
 
-        # 再帰と停止性の処理
-        is_rec, hint = _analyze_recursion(node)
+        is_rec, hint = meta.get("is_recursive", False), meta.get("hint")
         if is_rec:
             res += f"\ntermination_by {hint}" if hint else ""
             if not hint:
@@ -187,7 +245,7 @@ class LeanTranslator(ast.NodeVisitor):
 
 # --- ビルトイン関数・メソッド変換用レジストリ ---
 
-def _handle_decimal_call(node):
+def _handle_decimal_call(node, visitor):
     if len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
         try:
             f = fractions.Fraction(node.args[0].value)
@@ -196,26 +254,26 @@ def _handle_decimal_call(node):
     return None
 
 def _handle_unary_call(lean_func):
-    return lambda node: f"({lean_func} {translate_to_lean(node.args[0])})" if len(node.args) == 1 else None
+    return lambda node, visitor: f"({lean_func} {visitor._v(node.args[0])})" if len(node.args) == 1 else None
 
-def _handle_min_max_call(node):
-    func_name = translate_to_lean(node.func)
+def _handle_min_max_call(node, visitor):
+    func_name = visitor._v(node.func)
     if len(node.args) >= 2:
-        args_str = [translate_to_lean(arg) for arg in node.args]
+        args_str = [visitor._v(arg) for arg in node.args]
         result = args_str[-1]
         for arg in reversed(args_str[:-1]):
             result = f"({func_name} {arg} {result})"
         return result
     return None
 
-def _handle_date_call(node):
+def _handle_date_call(node, visitor):
     if len(node.args) == 3:
-        a = [translate_to_lean(arg) for arg in node.args]
+        a = [visitor._v(arg) for arg in node.args]
         return f"({{ year := {a[0]}, month := {a[1]}, day := {a[2]} }} : Date)"
     return None
 
-def _handle_quantize_method(node):
-    target = translate_to_lean(node.func.value)
+def _handle_quantize_method(node, visitor):
+    target = visitor._v(node.func.value)
     is_half_up = any(kw.arg == "rounding" and isinstance(kw.value, ast.Name) and kw.value.id == "ROUND_HALF_UP" for kw in node.keywords)
     return f"(py_round_half_up {target})" if is_half_up else None
 
@@ -233,47 +291,3 @@ _BUILTIN_CALL_HANDLERS = {
 _METHOD_CALL_HANDLERS = {
     "quantize": _handle_quantize_method,
 }
-
-def _analyze_recursion(func_def_node: ast.FunctionDef) -> Tuple[bool, Optional[str]]:
-    """
-    関数定義ASTを解析し、再帰呼び出しの有無と停止性のヒントを返す。
-    戻り値: (is_recursive: bool, hint: str | None)
-    """
-    func_name = func_def_node.name
-    
-    class RecursionVisitor(ast.NodeVisitor):
-        def __init__(self):
-            self.is_recursive = False
-            self.hint: Optional[str] = None
-
-        def visit_Call(self, node: ast.Call):
-            # 自分自身を呼び出しているか？
-            if isinstance(node.func, ast.Name) and node.func.id == func_name:
-                self.is_recursive = True
-                
-                # 既にヒントを見つけていれば何もしない
-                if self.hint:
-                    self.generic_visit(node)
-                    return
-
-                # 引数と元の引数名を対応付ける
-                for i, arg_node in enumerate(node.args):
-                    if i < len(func_def_node.args.args):
-                        param_name = func_def_node.args.args[i].arg
-                        
-                        # 引数が `param - C` (Cは正の整数) の形かチェック
-                        if (isinstance(arg_node, ast.BinOp) and
-                            isinstance(arg_node.left, ast.Name) and
-                            arg_node.left.id == param_name and
-                            isinstance(arg_node.op, ast.Sub) and
-                            isinstance(arg_node.right, ast.Constant) and
-                            isinstance(arg_node.right.value, int) and
-                            arg_node.right.value > 0):
-                            
-                            self.hint = param_name
-            
-            self.generic_visit(node)
-
-    visitor = RecursionVisitor()
-    visitor.visit(func_def_node)
-    return visitor.is_recursive, visitor.hint
