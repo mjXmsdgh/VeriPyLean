@@ -7,6 +7,35 @@ class LeanTranslator(ast.NodeVisitor):
     """Python ASTを走査し、再帰的にLean 4の構文へと変換するメインビジター"""
     def __init__(self, context):
         self.context = context
+        # 文字列テンプレートの定義
+        self.templates = {
+            "doc": "/-- {doc} -/\n",
+            "def": "{doc}def {name} {args} : {ret_type} :=\n  {body}{term}",
+            "theorem": "{doc}theorem {name} {args} : {prop} :=\n  {body}\n  by sorry",
+            "warn_rec": "-- [PyLean] Warning: No termination measure found.\n{code}",
+            "field": "{name} : {type}",
+            "enum_variant": "| {name}"
+        }
+        # ディスパッチ・テーブル: 型をキーに関数をマッピング
+        self.dispatch = {
+            ast.Constant: lambda n: f'"{n.value}"' if isinstance(n.value, str) else str(n.value),
+            ast.Name: lambda n: n.id,
+            ast.Attribute: lambda n: f"{self._v(n.value)}.{n.attr}",
+            ast.Return: lambda n: self._v(n.value),
+            ast.Expr: lambda n: self._v(n.value),
+            ast.Assign: lambda n: f"let {self._v(n.targets[0])} := {self._v(n.value)};",
+            ast.Pass: lambda _: "()",
+            ast.Assert: lambda n: f"have : {self._v(n.test)} := by sorry",
+            ast.IfExp: lambda n: f"if {self._v(n.test)} then {self._v(n.body)} else {self._v(n.orelse)}",
+            ast.If: lambda n: f"if {self._v(n.test)} then {self._v(n.body[0])} else {self._v(n.orelse[0]) if n.orelse else '0'}",
+            ast.List: lambda n: f"[{', '.join([self._v(e) for e in n.elts])}]",
+            ast.Tuple: lambda n: f"({', '.join([self._v(e) for e in n.elts])})",
+            # 演算子系は共通メソッドへ委譲
+            ast.BinOp: self._visit_op,
+            ast.UnaryOp: self._visit_op,
+            ast.BoolOp: self._visit_op,
+            ast.Compare: self._visit_op,
+        }
 
     def visit_Module(self, node):
         """ルートノード: 全てのステートメントを変換して結合する"""
@@ -15,6 +44,12 @@ class LeanTranslator(ast.NodeVisitor):
     def generic_visit(self, node):
         """未知のノードに対するデフォルトのフォールバック"""
         return self._unsupported(node)
+
+    def visit(self, node):
+        """ディスパッチ・テーブルを優先して参照する"""
+        handler = self.dispatch.get(type(node))
+        if handler: return handler(node)
+        return super().visit(node)
 
     def _v(self, node):
         """再帰的な変換のヘルパー"""
@@ -65,37 +100,31 @@ class LeanTranslator(ast.NodeVisitor):
             return self._translate_structure(node)
         return self._unsupported(node, "Only Enums and @dataclass are supported")
 
-    def visit_Assign(self, node): return f"let {self._v(node.targets[0])} := {self._v(node.value)};"
-    def visit_Constant(self, node): return f'"{node.value}"' if isinstance(node.value, str) else str(node.value)
-    def visit_Name(self, node): return node.id
-    def visit_Attribute(self, node): return f"{self._v(node.value)}.{node.attr}"
-    def visit_Return(self, node): return self._v(node.value)
-    def visit_Assert(self, node): return f"have : {self._v(node.test)} := by sorry"
-    def visit_Expr(self, node): return self._v(node.value)
-    def visit_BinOp(self, node):
-        l, r = self._v(node.left), self._v(node.right)
-        if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
-        op = constants.BIN_OPS.get(type(node.op))
-        return f"({l} {op} {r})" if op else self._unsupported(node.op)
-    def visit_IfExp(self, node): return f"if {self._v(node.test)} then {self._v(node.body)} else {self._v(node.orelse)}"
-    def visit_If(self, node):
-        orelse = self._v(node.orelse[0]) if node.orelse else "0"
-        return f"if {self._v(node.test)} then {self._v(node.body[0])} else {orelse}"
-    def visit_BoolOp(self, node):
-        op = constants.BOOL_OPS.get(type(node.op), "??")
-        return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
-    def visit_UnaryOp(self, node):
-        op = constants.UNARY_OPS.get(type(node.op))
-        return f"({op}{self._v(node.operand)})" if op else self._unsupported(node.op)
-    def visit_Compare(self, node):
-        parts, curr = [], self._v(node.left)
-        for op, comp in zip(node.ops, node.comparators):
-            next_v = self._v(comp)
-            parts.append(f"({curr} {constants.COMP_OPS.get(type(op), '?')} {next_v})")
-            curr = next_v
-        return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
-    def visit_List(self, node): return f"[{', '.join([self._v(e) for e in node.elts])}]"
-    def visit_Tuple(self, node): return f"({', '.join([self._v(e) for e in node.elts])})"
+    def _visit_op(self, node):
+        """演算子系のノード（BinOp, UnaryOp, BoolOp, Compare）を統合処理する"""
+        if isinstance(node, ast.BinOp):
+            l, r = self._v(node.left), self._v(node.right)
+            if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
+            op = constants.BIN_OPS.get(type(node.op))
+            return f"({l} {op} {r})" if op else self._unsupported(node.op)
+
+        if isinstance(node, ast.UnaryOp):
+            op = constants.UNARY_OPS.get(type(node.op))
+            return f"({op}{self._v(node.operand)})" if op else self._unsupported(node.op)
+
+        if isinstance(node, ast.BoolOp):
+            op = constants.BOOL_OPS.get(type(node.op), "??")
+            return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
+
+        if isinstance(node, ast.Compare):
+            parts, curr = [], self._v(node.left)
+            for op, comp in zip(node.ops, node.comparators):
+                next_v = self._v(comp)
+                parts.append(f"({curr} {constants.COMP_OPS.get(type(op), '?')} {next_v})")
+                curr = next_v
+            return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
+
+        return self._unsupported(node)
 
     def visit_Call(self, node):
         fn = self._v(node.func)
@@ -110,17 +139,18 @@ class LeanTranslator(ast.NodeVisitor):
         return self._translate_list_comp_recursive(node.generators, node.elt)
 
     def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
-    def visit_Pass(self, node): return "()"
 
     def _translate_enum(self, node):
-        variants = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) 
+        variants = [self.templates["enum_variant"].format(name=t.id)
+                    for s in node.body if isinstance(s, ast.Assign) 
                     for t in s.targets if isinstance(t, ast.Name)]
-        return constants.IND_TEMPLATE.format(name=node.name, items="\n".join(variants))
+        # 項目をインデント付きで結合
+        return constants.IND_TEMPLATE.format(name=node.name, items="\n  ".join(variants))
 
     def _translate_structure(self, node):
-        fields = [f"  {s.target.id} : {types.translate_type(s.annotation)}" 
+        fields = [self.templates["field"].format(name=s.target.id, type=types.translate_type(s.annotation))
                   for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-        return constants.STRUCT_TEMPLATE.format(name=node.name, items="\n".join(fields))
+        return constants.STRUCT_TEMPLATE.format(name=node.name, items="\n  ".join(fields))
 
     def _translate_list_comp_recursive(self, generators, elt):
         if not generators: return self._v(elt)
@@ -136,18 +166,28 @@ class LeanTranslator(ast.NodeVisitor):
         return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
+        doc_str = self.templates["doc"].format(doc=doc) if doc else ""
         body_lines = [self._v(s) for s in stmts] or ["sorry"]
-        doc_prefix = f"/-- {doc} -/\n" if doc else ""
+
         if is_thm:
+            # 定理の場合: 最後のReturnを命題として抽出し、本体からは除く
             is_ret = isinstance(stmts[-1], ast.Return)
             prop = self._v(stmts[-1].value) if is_ret else "True"
             if is_ret: body_lines = body_lines[:-1]
-            res = f"{doc_prefix}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
+
+            res = self.templates["theorem"].format(
+                doc=doc_str, name=node.name, args=args, prop=prop,
+                body="\n  ".join(body_lines) if body_lines else "skip"
+            )
         else:
-            ret_type = types.translate_type(node.returns)
-            res = f"{doc_prefix}def {node.name} {args} : {ret_type} :=\n  " + "\n  ".join(body_lines)
-        is_rec, hint = meta.get("is_recursive", False), meta.get("hint")
-        if is_rec:
-            res += f"\ntermination_by {hint}" if hint else ""
-            if not hint: res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
+            res = self.templates["def"].format(
+                doc=doc_str, name=node.name, args=args,
+                ret_type=types.translate_type(node.returns),
+                body="\n  ".join(body_lines),
+                term=f"\ntermination_by {meta['hint']}" if meta.get("hint") else ""
+            )
+
+        if meta.get("is_recursive") and not meta.get("hint"):
+            res = self.templates["warn_rec"].format(code=res)
+
         return res
