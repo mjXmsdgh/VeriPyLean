@@ -136,7 +136,7 @@ class LeanTranslator(ast.NodeVisitor):
         return fn if not args else f"{fn} {' '.join(args)}"
 
     def visit_ListComp(self, node):
-        return self._translate_list_comp_recursive(node.generators, node.elt)
+        return self._translate_list_comp(node.generators, node.elt)
 
     def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
 
@@ -152,18 +152,41 @@ class LeanTranslator(ast.NodeVisitor):
                   for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
         return constants.STRUCT_TEMPLATE.format(name=node.name, items="\n  ".join(fields))
 
-    def _translate_list_comp_recursive(self, generators, elt):
-        if not generators: return self._v(elt)
-        gen, *rest = generators
-        inner = self._translate_list_comp_recursive(rest, elt)
-        target, iterable = self._v(gen.target), self._v(gen.iter)
-        if not gen.ifs:
-            method = "map" if not rest else "flatMap"
-            return f"({iterable}).{method} (fun {target} => {inner})"
-        cond = " && ".join(f"({self._v(c)})" for c in gen.ifs)
-        if not rest:
-            return f"({iterable}).filterMap (fun {target} => if {cond} then some ({inner}) else none)"
-        return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
+    def _translate_list_comp(self, generators, elt):
+        """
+        リスト内包表記をLeanのmap/flatMap/filterMap/filterの組み合わせに変換する。
+        再帰的なロジックを反復処理に置き換え、内側から外側へ式を構築する。
+        """
+        # 最終的にマップされる要素
+        current_lean_expr = self._v(elt)
+
+        # ジェネレータを逆順に処理することで、内側から外側へ式を構築する
+        # Pythonのリスト内包表記の最後のジェネレータがLeanの最も内側の操作に対応する
+        for i, gen in enumerate(reversed(generators)):
+            target = self._v(gen.target)
+            iterable = self._v(gen.iter)
+            conditions = [self._v(c) for c in gen.ifs]
+            cond_str = " && ".join(f"({c})" for c in conditions) if conditions else None
+
+            # 最初のジェネレータ（Pythonのリスト内包表記の最も内側のジェネレータ）
+            is_innermost_generator = (i == 0)
+
+            if is_innermost_generator:
+                if cond_str:
+                    # 内側のジェネレータで条件がある場合: filterMap
+                    current_lean_expr = f"({iterable}).filterMap (fun {target} => if {cond_str} then some ({current_lean_expr}) else none)"
+                else:
+                    # 内側のジェネレータで条件がない場合: map
+                    current_lean_expr = f"({iterable}).map (fun {target} => {current_lean_expr})"
+            else:
+                if cond_str:
+                    # 外側のジェネレータで条件がある場合: filter と flatMap
+                    current_lean_expr = f"({iterable}).filter (fun {target} => {cond_str}).flatMap (fun {target} => {current_lean_expr})"
+                else:
+                    # 外側のジェネレータで条件がない場合: flatMap
+                    current_lean_expr = f"({iterable}).flatMap (fun {target} => {current_lean_expr})"
+        
+        return current_lean_expr
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
         doc_str = self.templates["doc"].format(doc=doc) if doc else ""
