@@ -8,6 +8,36 @@ def translate_to_lean(node):
     if node is None: return ""
     return LeanTranslator().visit(node)
 
+# --- 宣言的なマッピングの定義 ---
+
+BIN_OPS = {
+    ast.Add: "+",
+    ast.Sub: "-",
+    ast.Mult: "*",
+    ast.FloorDiv: "/",
+    ast.Mod: "%",
+    ast.Pow: "^",
+}
+
+COMP_OPS = {
+    ast.Eq: "==",
+    ast.NotEq: "≠",
+    ast.Lt: "<",
+    ast.LtE: "<=",
+    ast.Gt: ">",
+    ast.GtE: ">=",
+}
+
+BOOL_OPS = {
+    ast.And: "&&",
+    ast.Or: "||",
+}
+
+UNARY_OPS = {
+    ast.Not: "!",
+    ast.USub: "-",
+}
+
 class LeanTranslator(ast.NodeVisitor):
     """ASTを巡回してLeanコードを生成するビジター"""
     def generic_visit(self, node): return "/* サポート外 */"
@@ -77,22 +107,23 @@ class LeanTranslator(ast.NodeVisitor):
     def visit_BinOp(self, node):
         l, r = translate_to_lean(node.left), translate_to_lean(node.right)
         if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
-        op_m = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.FloorDiv: "/", ast.Mod: "%", ast.Pow: "^"}
-        return f"({l} {op_m[type(node.op)]} {r})" if type(node.op) in op_m else "/* サポート外 */"
+        op = BIN_OPS.get(type(node.op))
+        return f"({l} {op} {r})" if op else "/* サポート外 */"
     def visit_IfExp(self, node): return f"if {translate_to_lean(node.test)} then {translate_to_lean(node.body)} else {translate_to_lean(node.orelse)}"
     def visit_If(self, node):
         orelse = translate_to_lean(node.orelse[0]) if node.orelse else "0"
         return f"if {translate_to_lean(node.test)} then {translate_to_lean(node.body[0])} else {orelse}"
     def visit_BoolOp(self, node):
-        op = "&&" if isinstance(node.op, ast.And) else "||"
-        return f"({' ' + op + ' '.join([translate_to_lean(v) for v in node.values])})"
-    def visit_UnaryOp(self, node): return f"(!{translate_to_lean(node.operand)})" if isinstance(node.op, ast.Not) else "/* サポート外 */"
+        op = BOOL_OPS.get(type(node.op), "??")
+        return f"({(f' {op} ').join([translate_to_lean(v) for v in node.values])})"
+    def visit_UnaryOp(self, node):
+        op = UNARY_OPS.get(type(node.op))
+        return f"({op}{translate_to_lean(node.operand)})" if op else "/* サポート外 */"
     def visit_Compare(self, node):
-        op_m = {ast.Eq: "==", ast.NotEq: "≠", ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">="}
         parts, curr = [], translate_to_lean(node.left)
         for op, comp in zip(node.ops, node.comparators):
             next_v = translate_to_lean(comp)
-            parts.append(f"({curr} {op_m.get(type(op), '?')} {next_v})")
+            parts.append(f"({curr} {COMP_OPS.get(type(op), '?')} {next_v})")
             curr = next_v
         return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
     def visit_List(self, node): return f"[{', '.join([translate_to_lean(e) for e in node.elts])}]"
