@@ -1,38 +1,23 @@
 import ast
 from . import translator
-from . import preamble
 
-def compile_python_to_lean(code_input):
-    """Pythonコード文字列を受け取り、完全なLeanコード文字列を返す"""
+def compile_python_to_lean(code: str):
+    """
+    Pythonソースコードを受け取り、Lean 4コードと警告リストを返すメインエントリポイント。
+    """
     try:
-        parsed_ast_root = ast.parse(code_input)
-    except SyntaxError as e:
-        raise ValueError(f"構文エラー: {e}")
+        tree = ast.parse(code)
+        context = translator.analyze(tree)
+        lean_code = translator.translate_to_lean(tree, context)
+        return lean_code, context.warnings
+    except Exception as e:
+        # パースエラー等の致命的なエラー時のハンドリング
+        return f"-- Error during translation: {str(e)}", [str(e)]
 
-    if not parsed_ast_root.body:
-        raise ValueError("コードが入力されていません。")
-    
-    # 解析フェーズ: AST全体を走査してメタデータを収集
-    context = translator.analyze(parsed_ast_root)
-    
-    # 複数のステートメント（関数定義など）を処理し、import文は無視する
-    lean_parts = []
-    has_top_level_def = False
-    for node in parsed_ast_root.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            continue
-        if isinstance(node, ast.Assert):
-            lean_parts.append(f"example : {translator.translate_to_lean(node.test, context)} := by\n  sorry")
-            continue
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-            has_top_level_def = True
-        lean_parts.append(translator.translate_to_lean(node, context))
-    
-    lean_code = "\n\n".join(lean_parts)
-    # 必要なヘルパー定義（プリアンブル）を構築
-    preamble_code = preamble.generate(lean_code)
+def analyze(node):
+    """下位互換性のために維持: ASTの解析を行う"""
+    return translator.analyze(node)
 
-    if has_top_level_def:
-        return preamble_code + lean_code
-    else:
-        return preamble_code + f"def example (n : Int) : Int :=\n  {lean_code}"
+def translate_to_lean(node, context=None):
+    """下位互換性のために維持: ASTをLeanコードに変換する"""
+    return translator.translate_to_lean(node, context)

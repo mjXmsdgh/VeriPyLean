@@ -9,10 +9,15 @@ def render_lean_view(code_input):
     st.subheader("Lean 4 View")
     try:
         # 変換ロジック呼び出し（UI非依存）
-        final_code = toLean.compile_python_to_lean(code_input)
+        final_code, warnings = toLean.compile_python_to_lean(code_input)
 
         st.code(final_code, language="lean")
-        st.success("AST解析成功: 構文は正当です")
+
+        if warnings:
+            for warning in warnings:
+                st.warning(warning)
+        else:
+            st.success("AST解析成功: 構文は正当です")
 
         # 注釈があれば表示
         if st.session_state.annotation:
