@@ -339,32 +339,40 @@ def _translate_for(node):
     """ast.For は現在サポート外であることを示すコメントを返す"""
     return "/* for ループは List.map, List.foldl, または再帰関数への変換が必要なため、現在直接の変換はサポートされていません。リスト内包表記や sum() などの高階関数の使用を検討してください。 */"
 
+
+
+_HANDLERS = {
+    ast.FunctionDef: _translate_function_def,
+    ast.ClassDef: _translate_class_def,
+    ast.Assign: _translate_assign,
+    ast.Constant: _translate_constant,
+    ast.Name: _translate_name,
+    ast.Attribute: _translate_attribute,
+    ast.Return: _translate_return,
+    ast.Assert: _translate_assert,
+    ast.Expr: _translate_expr,
+    ast.BinOp: _translate_bin_op,
+    ast.IfExp: _translate_if_exp,
+    ast.If: _translate_if,
+    ast.BoolOp: _translate_bool_op,
+    ast.UnaryOp: _translate_unary_op,
+    ast.Compare: _translate_compare,
+    ast.List: _translate_list,
+    ast.Tuple: _translate_tuple,
+    ast.Call: _translate_call,
+    ast.ListComp: _translate_list_comp,
+    ast.For: _translate_for,
+}
+
 # --- 変換ロジックのメインディスパッチャ ---
 def translate_to_lean(node):
     """ASTノードを解析し、対応する変換関数を呼び出す"""
     if node is None:
         return ""
 
-    if isinstance(node, ast.FunctionDef): return _translate_function_def(node)
-    elif isinstance(node, ast.ClassDef): return _translate_class_def(node)
-    elif isinstance(node, ast.Assign): return _translate_assign(node)
-    elif isinstance(node, ast.Constant): return _translate_constant(node)
-    elif isinstance(node, ast.Name): return _translate_name(node)
-    elif isinstance(node, ast.Attribute): return _translate_attribute(node)
-    elif isinstance(node, ast.Return): return _translate_return(node)
-    elif isinstance(node, ast.Assert): return _translate_assert(node)
-    elif isinstance(node, ast.Expr): return _translate_expr(node)
-    elif isinstance(node, ast.BinOp): return _translate_bin_op(node)
-    elif isinstance(node, ast.IfExp): return _translate_if_exp(node)
-    elif isinstance(node, ast.If): return _translate_if(node)
-    elif isinstance(node, ast.BoolOp): return _translate_bool_op(node)
-    elif isinstance(node, ast.UnaryOp): return _translate_unary_op(node)
-    elif isinstance(node, ast.Compare): return _translate_compare(node)
-    elif isinstance(node, ast.List): return _translate_list(node)
-    elif isinstance(node, ast.Tuple): return _translate_tuple(node)
-    elif isinstance(node, ast.Call): return _translate_call(node)
-    elif isinstance(node, ast.ListComp): return _translate_list_comp(node)
-    elif isinstance(node, ast.For): return _translate_for(node)
+    handler = _HANDLERS.get(type(node))
+    if handler:
+        return handler(node)
     
     return "/* サポート外 */"
 
