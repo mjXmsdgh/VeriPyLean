@@ -5,7 +5,16 @@ from contextlib import contextmanager
 from typing import Tuple, Optional
 
 def translate_to_lean(node, context=None):
-    """ASTノードを解析し、対応する変換を呼び出す (Entry Point)"""
+    """
+    Python ASTノードを対応するLean 4コード文字列に変換するエントリポイント。
+
+    Args:
+        node (ast.AST): 変換対象のPython ASTノード。
+        context (TranslationContext, optional): 収集済みのメタデータ。省略時は自動で解析を行う。
+
+    Returns:
+        str: 変換後のLeanコード文字列。
+    """
     if node is None: return ""
     if context is None:
         # 個別ノードの変換でも最小限の解析を行う
@@ -13,7 +22,15 @@ def translate_to_lean(node, context=None):
     return LeanTranslator(context).visit(node)
 
 def analyze(node):
-    """ASTを解析して変換に必要なメタデータを作成する"""
+    """
+    ASTを走査して、型定義や再帰構造などの変換に必要なメタデータを収集する。
+
+    Args:
+        node (ast.AST): 解析対象のASTルートまたはノード。
+
+    Returns:
+        TranslationContext: 収集されたメタデータ。
+    """
     context = TranslationContext()
     AnalysisVisitor(context).visit(node)
     return context
@@ -61,20 +78,27 @@ deriving Repr, BEq"""
 # --- コードビルダー ---
 
 class CodeBuilder:
+    """インデント管理を行いながら構造的なコード文字列を組み立てるクラス"""
     def __init__(self, indent_size=2):
         self.lines = []
         self.level = 0
         self.indent_size = indent_size
 
-    def indent(self): self.level += 1
-    def dedent(self): self.level = max(0, self.level - 1)
+    def indent(self):
+        """インデントレベルを1つ上げる"""
+        self.level += 1
+    def dedent(self):
+        """インデントレベルを1つ下げる"""
+        self.level = max(0, self.level - 1)
 
     def add(self, text):
+        """現在のインデントを付与して1行追加する"""
         prefix = " " * (self.level * self.indent_size)
         self.lines.append(f"{prefix}{text}")
 
     @contextmanager
     def block(self, header):
+        """ヘッダーを追加し、コンテキスト内をインデントブロックとする"""
         self.add(header)
         self.indent()
         yield
@@ -83,18 +107,25 @@ class CodeBuilder:
     def build(self): return "\n".join(self.lines)
 
 class TranslationContext:
-    """変換中に参照されるメタデータ情報を保持する"""
+    """変換プロセス全体で共有されるコンテキスト（関数情報、クラス情報、警告ログ）"""
     def __init__(self):
         self.functions = {}  # name -> {"is_recursive": bool, "hint": str}
         self.classes = {}    # name -> "enum" | "structure"
         self.warnings = []
 
     def add_warning(self, node, message):
+        """解析・変換中に発生した制限事項やエラーを警告として記録する"""
         line = getattr(node, 'lineno', 'unknown')
         self.warnings.append(f"Line {line}: {message}")
 
 class AnalysisVisitor(ast.NodeVisitor):
-    """生成前にASTを走査して情報を収集する"""
+    """
+    Leanコード生成パスの前に実行され、ASTから意味情報を抽出する。
+    
+    役割:
+    1. 関数が自己再帰しているか判定し、停止性のためのヒント（引数の減少）を探す。
+    2. クラス定義がEnumなのかDataclassなのかを判定し、生成パスでの分岐を簡略化する。
+    """
     def __init__(self, context):
         self.context = context
 
@@ -108,13 +139,21 @@ class AnalysisVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
-        # 再帰解析
+        """関数定義を見つけたら再帰構造を解析してコンテキストに登録する"""
         is_rec, hint = self._check_recursion(node)
         self.context.functions[node.name] = {"is_recursive": is_rec, "hint": hint}
         self.generic_visit(node)
 
     def _check_recursion(self, func_node):
-        """関数内の再帰呼び出しを判定する"""
+        """
+        関数内のCallノードを調べ、自己再帰の有無と停止性ヒント(n-1 等)を抽出する。
+
+        Args:
+            func_node (ast.FunctionDef): 解析対象の関数定義。
+
+        Returns:
+            Tuple[bool, Optional[str]]: (再帰の有無, 減少する引数名)
+        """
         func_name = func_node.name
         res = {"is_recursive": False, "hint": None}
         
@@ -134,7 +173,7 @@ class AnalysisVisitor(ast.NodeVisitor):
         return res["is_recursive"], res["hint"]
 
 class LeanTranslator(ast.NodeVisitor):
-    """ASTを巡回してLeanコードを生成するビジター"""
+    """Python ASTを走査し、再帰的にLean 4の構文へと変換するメインビジター"""
     def __init__(self, context):
         self.context = context
 
@@ -236,11 +275,20 @@ class LeanTranslator(ast.NodeVisitor):
         return self._translate_list_comp_recursive(node.generators, node.elt)
 
     def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
+    def visit_Pass(self, node): return "()"
 
     # --- 複雑な変換ロジックの内部ヘルパー ---
 
     def _translate_enum(self, node):
-        """PythonのEnumをLeanのinductive型に変換"""
+        """
+        PythonのEnumクラスをLeanのinductive型定義に変換する。
+
+        Args:
+            node (ast.ClassDef): Enumを継承したクラス定義。
+
+        Returns:
+            str: inductive定義。
+        """
         variants = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) 
                     for t in s.targets if isinstance(t, ast.Name)]
         return IND_TEMPLATE.format(name=node.name, items="\n".join(variants))
@@ -252,7 +300,16 @@ class LeanTranslator(ast.NodeVisitor):
         return STRUCT_TEMPLATE.format(name=node.name, items="\n".join(fields))
 
     def _translate_list_comp_recursive(self, generators, elt):
-        """リスト内包表記をLeanのmap/flatMap/filterMapチェーンに再帰的に変換"""
+        """
+        Pythonのリスト内包表記（多重ループやif条件含む）をLeanのリスト操作チェーンに変換する。
+
+        Args:
+            generators (list): ast.comprehension のリスト。
+            elt (ast.AST): 抽出される要素の式。
+
+        Returns:
+            str: map/flatMap/filter 等を組み合わせたLeanの式。
+        """
         if not generators:
             return self._v(elt)
         
@@ -272,7 +329,20 @@ class LeanTranslator(ast.NodeVisitor):
             return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
-        """関数または定理のLean定義文字列を組み立てる"""
+        """
+        関数または定理の定義全体を組み立てる。
+
+        Args:
+            node (ast.FunctionDef): 元のノード。
+            doc (str): Docstring。
+            stmts (list): 関数本体のステートメント。
+            args (str): フォーマット済みの引数文字列。
+            is_thm (bool): 定理(theorem)として扱うか。
+            meta (dict): AnalysisVisitorで収集した再帰などの情報。
+
+        Returns:
+            str: Lean 4の定義文。
+        """
         body_lines = [self._v(s) for s in stmts] or ["sorry"]
         doc_prefix = f"/-- {doc} -/\n" if doc else ""
         
@@ -296,6 +366,7 @@ class LeanTranslator(ast.NodeVisitor):
 # --- ビルトイン関数・メソッド変換用レジストリ ---
 
 def _handle_decimal_call(node, visitor):
+    """Decimal('0.1') などのリテラルを (1/10 : Rat) に変換する"""
     if len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
         try:
             f = fractions.Fraction(node.args[0].value)
@@ -304,9 +375,11 @@ def _handle_decimal_call(node, visitor):
     return None
 
 def _handle_unary_call(lean_func):
+    """単一引数の関数呼び出しを変換する汎用ハンドラ"""
     return lambda node, visitor: f"({lean_func} {visitor._v(node.args[0])})" if len(node.args) == 1 else None
 
 def _handle_min_max_call(node, visitor):
+    """min/maxを2変数関数のネストに展開する"""
     func_name = visitor._v(node.func)
     if len(node.args) >= 2:
         args_str = [visitor._v(arg) for arg in node.args]
@@ -317,6 +390,7 @@ def _handle_min_max_call(node, visitor):
     return None
 
 def _handle_date_call(node, visitor):
+    """date(y, m, d) を Date 構造体リテラルに変換する"""
     if len(node.args) == 3:
         a = [visitor._v(arg) for arg in node.args]
         return f"({{ year := {a[0]}, month := {a[1]}, day := {a[2]} }} : Date)"
