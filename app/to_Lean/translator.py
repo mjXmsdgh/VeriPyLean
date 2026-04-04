@@ -67,34 +67,19 @@ class LeanTranslator(ast.NodeVisitor):
         args = self._format_args(node.args)
         is_thm = node.name.startswith(("verify_", "theorem_"))
         
-        # 本体の変換
-        body_lines = [translate_to_lean(s) for s in stmts] or ["sorry"]
-        doc_prefix = f"/-- {doc} -/\n" if doc else ""
+        return self._build_function_or_theorem(node, doc, stmts, args, is_thm)
 
-        if is_thm:
-            # 定理(theorem)の場合は最後のReturnを命題として扱う
-            is_ret = isinstance(stmts[-1], ast.Return)
-            prop = translate_to_lean(stmts[-1].value) if is_ret else "True"
-            if is_ret: body_lines = body_lines[:-1]
-            res = f"{doc_prefix}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
-        else:
-            res = f"{doc_prefix}def {node.name} {args} : {types.translate_type(node.returns)} :=\n  " + "\n  ".join(body_lines)
-
-        # 再帰解析の統合
-        is_rec, hint = _analyze_recursion(node)
-        if is_rec:
-            res += f"\ntermination_by {hint}" if hint else ""
-            if not hint: res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
-        return res
     def visit_ClassDef(self, node):
+        """クラス定義をEnumまたはStructure(Dataclass)として変換する"""
         is_enum = any(isinstance(b, ast.Name) and b.id == "Enum" for b in node.bases)
-        is_dc = any((isinstance(d, ast.Name) and d.id == "dataclass") or (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass") for d in node.decorator_list)
+        is_dc = any((isinstance(d, ast.Name) and d.id == "dataclass") or 
+                    (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass") 
+                    for d in node.decorator_list)
+
         if is_enum:
-            vars = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) for t in s.targets if isinstance(t, ast.Name)]
-            return f"inductive {node.name} where\n" + "\n".join(vars) + "\nderiving Repr, BEq"
-        elif is_dc:
-            fields = [f"  {s.target.id} : {types.translate_type(s.annotation)}" for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-            return f"structure {node.name} where\n" + "\n".join(fields) + "\nderiving Repr, BEq"
+            return self._translate_enum(node)
+        if is_dc:
+            return self._translate_structure(node)
         return "/* サポート外のクラス定義 */"
 
     def visit_Assign(self, node): return f"let {translate_to_lean(node.targets[0])} := {translate_to_lean(node.value)};"
@@ -139,16 +124,66 @@ class LeanTranslator(ast.NodeVisitor):
         return fn if not args else f"{fn} {' '.join(args)}"
 
     def visit_ListComp(self, node):
-        def build(gens, elt):
-            if not gens: return translate_to_lean(elt)
-            g, inner = gens[0], build(gens[1:], elt)
-            t, i = translate_to_lean(g.target), translate_to_lean(g.iter)
-            if not g.ifs: return f"({i}).map (fun {t} => {inner})" if len(gens) == 1 else f"({i}).flatMap (fun {t} => {inner})"
-            c = " && ".join(f"({translate_to_lean(cond)})" for cond in g.ifs)
-            return f"({i}).filterMap (fun {t} => if {c} then some ({inner}) else none)" if len(gens) == 1 else f"({i}).filter (fun {t} => {c}).flatMap (fun {t} => {inner})"
-        return build(node.generators, node.elt)
+        return self._translate_list_comp_recursive(node.generators, node.elt)
 
     def visit_For(self, node): return "/* for ループは現在サポート外。 */"
+
+    # --- 複雑な変換ロジックの内部ヘルパー ---
+
+    def _translate_enum(self, node):
+        """PythonのEnumをLeanのinductive型に変換"""
+        variants = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) 
+                    for t in s.targets if isinstance(t, ast.Name)]
+        return f"inductive {node.name} where\n" + "\n".join(variants) + "\nderiving Repr, BEq"
+
+    def _translate_structure(self, node):
+        """PythonのdataclassをLeanのstructureに変換"""
+        fields = [f"  {s.target.id} : {types.translate_type(s.annotation)}" 
+                  for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+        return f"structure {node.name} where\n" + "\n".join(fields) + "\nderiving Repr, BEq"
+
+    def _translate_list_comp_recursive(self, generators, elt):
+        """リスト内包表記をLeanのmap/flatMap/filterMapチェーンに再帰的に変換"""
+        if not generators:
+            return translate_to_lean(elt)
+        
+        gen, *rest = generators
+        inner = self._translate_list_comp_recursive(rest, elt)
+        target = translate_to_lean(gen.target)
+        iterable = translate_to_lean(gen.iter)
+        
+        if not gen.ifs:
+            method = "map" if not rest else "flatMap"
+            return f"({iterable}).{method} (fun {target} => {inner})"
+        
+        cond = " && ".join(f"({translate_to_lean(c)})" for c in gen.ifs)
+        if not rest:
+            return f"({iterable}).filterMap (fun {target} => if {cond} then some ({inner}) else none)"
+        else:
+            return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
+
+    def _build_function_or_theorem(self, node, doc, stmts, args, is_thm):
+        """関数または定理のLean定義文字列を組み立てる"""
+        body_lines = [translate_to_lean(s) for s in stmts] or ["sorry"]
+        doc_prefix = f"/-- {doc} -/\n" if doc else ""
+        
+        if is_thm:
+            # 定理の場合は最後のReturnを命題として抽出
+            is_ret = isinstance(stmts[-1], ast.Return)
+            prop = translate_to_lean(stmts[-1].value) if is_ret else "True"
+            if is_ret: body_lines = body_lines[:-1]
+            res = f"{doc_prefix}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
+        else:
+            ret_type = types.translate_type(node.returns)
+            res = f"{doc_prefix}def {node.name} {args} : {ret_type} :=\n  " + "\n  ".join(body_lines)
+
+        # 再帰と停止性の処理
+        is_rec, hint = _analyze_recursion(node)
+        if is_rec:
+            res += f"\ntermination_by {hint}" if hint else ""
+            if not hint:
+                res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
+        return res
 
 # --- ビルトイン関数・メソッド変換用レジストリ ---
 
