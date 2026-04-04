@@ -1,6 +1,7 @@
 import ast
 import fractions
 from . import types
+from contextlib import contextmanager
 from typing import Tuple, Optional
 
 def translate_to_lean(node, context=None):
@@ -46,6 +47,40 @@ UNARY_OPS = {
     ast.Not: "!",
     ast.USub: "-",
 }
+
+# --- テンプレート定義 ---
+
+IND_TEMPLATE = """inductive {name} where
+{items}
+deriving Repr, BEq"""
+
+STRUCT_TEMPLATE = """structure {name} where
+{items}
+deriving Repr, BEq"""
+
+# --- コードビルダー ---
+
+class CodeBuilder:
+    def __init__(self, indent_size=2):
+        self.lines = []
+        self.level = 0
+        self.indent_size = indent_size
+
+    def indent(self): self.level += 1
+    def dedent(self): self.level = max(0, self.level - 1)
+
+    def add(self, text):
+        prefix = " " * (self.level * self.indent_size)
+        self.lines.append(f"{prefix}{text}")
+
+    @contextmanager
+    def block(self, header):
+        self.add(header)
+        self.indent()
+        yield
+        self.dedent()
+
+    def build(self): return "\n".join(self.lines)
 
 class TranslationContext:
     """変換中に参照されるメタデータ情報を保持する"""
@@ -118,12 +153,12 @@ class LeanTranslator(ast.NodeVisitor):
         """関数引数を (name : Type) の形式で結合する"""
         return " ".join([f"({a.arg} : {types.translate_type(a.annotation)})" for a in args_node.args])
 
-    def _wrap_if_complex(self, arg_node):
-        """結合順序が紛らわしい式（CallやIfExp）を括弧で囲む"""
-        lean_str = self._v(arg_node)
-        if isinstance(arg_node, (ast.Call, ast.IfExp)):
-            return f"({lean_str})"
-        return lean_str
+    def _wrap(self, node, trigger_types=(ast.Call, ast.IfExp, ast.BinOp, ast.Compare)):
+        """必要に応じて式を括弧で囲む"""
+        res = self._v(node)
+        if isinstance(node, trigger_types):
+            return f"({res})"
+        return res
 
     def visit_FunctionDef(self, node):
         doc, stmts = self._extract_doc_and_body(node)
@@ -179,13 +214,13 @@ class LeanTranslator(ast.NodeVisitor):
         if h:
             res = h(node, self)
             if res: return res
-        args = [self._wrap_if_complex(a) for a in node.args]
+        args = [self._wrap(a, trigger_types=(ast.IfExp, ast.BinOp)) for a in node.args]
         return fn if not args else f"{fn} {' '.join(args)}"
 
     def visit_ListComp(self, node):
         return self._translate_list_comp_recursive(node.generators, node.elt)
 
-    def visit_For(self, node): return "/* for ループは現在サポート外。 */"
+    def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
 
     # --- 複雑な変換ロジックの内部ヘルパー ---
 
@@ -193,13 +228,13 @@ class LeanTranslator(ast.NodeVisitor):
         """PythonのEnumをLeanのinductive型に変換"""
         variants = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) 
                     for t in s.targets if isinstance(t, ast.Name)]
-        return f"inductive {node.name} where\n" + "\n".join(variants) + "\nderiving Repr, BEq"
+        return IND_TEMPLATE.format(name=node.name, items="\n".join(variants))
 
     def _translate_structure(self, node):
         """PythonのdataclassをLeanのstructureに変換"""
         fields = [f"  {s.target.id} : {types.translate_type(s.annotation)}" 
                   for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-        return f"structure {node.name} where\n" + "\n".join(fields) + "\nderiving Repr, BEq"
+        return STRUCT_TEMPLATE.format(name=node.name, items="\n".join(fields))
 
     def _translate_list_comp_recursive(self, generators, elt):
         """リスト内包表記をLeanのmap/flatMap/filterMapチェーンに再帰的に変換"""
