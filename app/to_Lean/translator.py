@@ -3,231 +3,96 @@ import fractions
 from . import types
 from typing import Tuple, Optional
 
-# --- 各ASTノードに対応する変換関数 ---
+def translate_to_lean(node):
+    """ASTノードを解析し、対応する変換を呼び出す (Entry Point)"""
+    if node is None: return ""
+    return LeanTranslator().visit(node)
 
-def _translate_function_def(node):
-    """ast.FunctionDef をLeanの関数定義に変換"""
-    func_name = node.name
-    
-    # Docstringの取得と処理
-    docstring = ast.get_docstring(node)
-    doc_comment = ""
-    stmts = node.body
+class LeanTranslator(ast.NodeVisitor):
+    """ASTを巡回してLeanコードを生成するビジター"""
+    def generic_visit(self, node): return "/* サポート外 */"
 
-    if docstring:
-        # Leanのドキュメントコメント形式に変換
-        doc_comment = f"/-- {docstring} -/\n"
-        # docstring文をbodyの変換対象から除外（先頭の文字列リテラル式をスキップ）
-        if len(stmts) > 0 and isinstance(stmts[0], ast.Expr) and \
-           isinstance(stmts[0].value, ast.Constant) and \
-           isinstance(stmts[0].value.value, str):
-            stmts = stmts[1:]
-
-    args_list = []
-    for arg in node.args.args:
-        arg_name = arg.arg
-        arg_type = types.translate_type(arg.annotation)
-        args_list.append(f"({arg_name} : {arg_type})")
-    args = " ".join(args_list)
-    return_type = types.translate_type(node.returns)
-
-    # 定理化の判定: verify_ または theorem_ で始まる関数は theorem として扱う
-    is_theorem = func_name.startswith("verify_") or func_name.startswith("theorem_")
-    keyword = "theorem" if is_theorem else "def"
-
-    # 関数本体のステートメントを変換
-    body_lines = [translate_to_lean(stmt) for stmt in stmts]
-
-    # 本体が空の場合（docstringのみの場合など）のフォールバック
-    if not body_lines:
-        body_lines = ["sorry"]
-
-    if is_theorem:
-        # 定理の場合、最後の return 式を命題 (Type) とし、本体を証明 (by sorry) にする
-        prop_expr = "True"
-        if isinstance(stmts[-1], ast.Return):
-            prop_expr = translate_to_lean(stmts[-1].value)
-            body_lines = body_lines[:-1]
-        
-        body = "\n  ".join(body_lines + ["by sorry"])
-        func_def_string = f"{doc_comment}{keyword} {func_name} {args} : {prop_expr} :=\n  {body}"
-    else:
-        body = "\n  ".join(body_lines)
-        # 基本の関数定義文字列を作成
-        func_def_string = f"{doc_comment}{keyword} {func_name} {args} : {return_type} :=\n  {body}"
-
-    # 再帰を解析し、必要なら termination_by や警告コメントを追加
-    is_recursive, termination_hint = _analyze_recursion(node)
-    if is_recursive:
-        if termination_hint:
-            func_def_string += f"\ntermination_by {termination_hint}"
+    def visit_FunctionDef(self, node):
+        doc = ast.get_docstring(node)
+        stmts = node.body[1:] if doc and len(node.body) > 0 and isinstance(node.body[0], ast.Expr) else node.body
+        args = " ".join([f"({a.arg} : {types.translate_type(a.annotation)})" for a in node.args.args])
+        is_thm = node.name.startswith(("verify_", "theorem_"))
+        body_lines = [translate_to_lean(s) for s in stmts] or ["sorry"]
+        if is_thm:
+            prop = translate_to_lean(stmts[-1].value) if isinstance(stmts[-1], ast.Return) else "True"
+            if isinstance(stmts[-1], ast.Return): body_lines = body_lines[:-1]
+            res = f"{'/-- ' + doc + ' -/ ' if doc else ''}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
         else:
-            comment = "-- [PyLean] Warning: Could not automatically determine termination measure. A 'termination_by' clause may be required."
-            func_def_string = f"{comment}\n{func_def_string}"
+            res = f"{'/-- ' + doc + ' -/ ' if doc else ''}def {node.name} {args} : {types.translate_type(node.returns)} :=\n  " + "\n  ".join(body_lines)
+        is_rec, hint = _analyze_recursion(node)
+        if is_rec:
+            if hint: res += f"\ntermination_by {hint}"
+            else: res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
+        return res
 
-    return func_def_string
+    def visit_ClassDef(self, node):
+        is_enum = any(isinstance(b, ast.Name) and b.id == "Enum" for b in node.bases)
+        is_dc = any((isinstance(d, ast.Name) and d.id == "dataclass") or (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass") for d in node.decorator_list)
+        if is_enum:
+            vars = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) for t in s.targets if isinstance(t, ast.Name)]
+            return f"inductive {node.name} where\n" + "\n".join(vars) + "\nderiving Repr, BEq"
+        elif is_dc:
+            fields = [f"  {s.target.id} : {types.translate_type(s.annotation)}" for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+            return f"structure {node.name} where\n" + "\n".join(fields) + "\nderiving Repr, BEq"
+        return "/* サポート外のクラス定義 */"
 
-def _translate_class_def(node):
-    """ast.ClassDef をLeanの型定義に変換"""
-    # Enum (列挙型) の判定
-    is_enum = any(isinstance(base, ast.Name) and base.id == "Enum" for base in node.bases)
-    
-    # dataclass の判定 (@dataclass または @dataclass(...))
-    is_dataclass = any(
-        (isinstance(dec, ast.Name) and dec.id == "dataclass") or
-        (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name) and dec.func.id == "dataclass")
-        for dec in node.decorator_list
-    )
-    
-    if is_enum:
-        enum_name = node.name
-        variants = []
-        for stmt in node.body:
-            # Docstringのスキップ
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
-                continue
-            
-            # 変数割り当て（Enumの各要素）を抽出
-            if isinstance(stmt, ast.Assign):
-                for target in stmt.targets:
-                    if isinstance(target, ast.Name):
-                        variants.append(f"  | {target.id}")
-        
-        variants_str = "\n".join(variants)
-        return f"inductive {enum_name} where\n{variants_str}\nderiving Repr, BEq"
+    def visit_Assign(self, node): return f"let {translate_to_lean(node.targets[0])} := {translate_to_lean(node.value)};"
+    def visit_Constant(self, node): return f'"{node.value}"' if isinstance(node.value, str) else str(node.value)
+    def visit_Name(self, node): return node.id
+    def visit_Attribute(self, node): return f"{translate_to_lean(node.value)}.{node.attr}"
+    def visit_Return(self, node): return translate_to_lean(node.value)
+    def visit_Assert(self, node): return f"have : {translate_to_lean(node.test)} := by sorry"
+    def visit_Expr(self, node): return translate_to_lean(node.value)
+    def visit_BinOp(self, node):
+        l, r = translate_to_lean(node.left), translate_to_lean(node.right)
+        if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
+        op_m = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.FloorDiv: "/", ast.Mod: "%", ast.Pow: "^"}
+        return f"({l} {op_m[type(node.op)]} {r})" if type(node.op) in op_m else "/* サポート外 */"
+    def visit_IfExp(self, node): return f"if {translate_to_lean(node.test)} then {translate_to_lean(node.body)} else {translate_to_lean(node.orelse)}"
+    def visit_If(self, node):
+        orelse = translate_to_lean(node.orelse[0]) if node.orelse else "0"
+        return f"if {translate_to_lean(node.test)} then {translate_to_lean(node.body[0])} else {orelse}"
+    def visit_BoolOp(self, node):
+        op = "&&" if isinstance(node.op, ast.And) else "||"
+        return f"({' ' + op + ' '.join([translate_to_lean(v) for v in node.values])})"
+    def visit_UnaryOp(self, node): return f"(!{translate_to_lean(node.operand)})" if isinstance(node.op, ast.Not) else "/* サポート外 */"
+    def visit_Compare(self, node):
+        op_m = {ast.Eq: "==", ast.NotEq: "≠", ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">="}
+        parts, curr = [], translate_to_lean(node.left)
+        for op, comp in zip(node.ops, node.comparators):
+            next_v = translate_to_lean(comp)
+            parts.append(f"({curr} {op_m.get(type(op), '?')} {next_v})")
+            curr = next_v
+        return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
+    def visit_List(self, node): return f"[{', '.join([translate_to_lean(e) for e in node.elts])}]"
+    def visit_Tuple(self, node): return f"({', '.join([translate_to_lean(e) for e in node.elts])})"
 
-    elif is_dataclass:
-        struct_name = node.name
-        fields = []
-        for stmt in node.body:
-            # Docstringのスキップ
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
-                continue
-            
-            # 型注釈付きのフィールド定義 (AnnAssign) を抽出
-            if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-                field_name = stmt.target.id
-                field_type = types.translate_type(stmt.annotation)
-                fields.append(f"  {field_name} : {field_type}")
-        
-        fields_str = "\n".join(fields)
-        return f"structure {struct_name} where\n{fields_str}\nderiving Repr, BEq"
-    
-    return "/* サポート外のクラス定義です（現在はEnumのみサポート） */"
+    def visit_Call(self, node):
+        fn = translate_to_lean(node.func)
+        h = _BUILTIN_CALL_HANDLERS.get(fn) or (isinstance(node.func, ast.Attribute) and _METHOD_CALL_HANDLERS.get(node.func.attr))
+        if h:
+            res = h(node)
+            if res: return res
+        args = [f"({translate_to_lean(a)})" if isinstance(a, (ast.Call, ast.IfExp)) else translate_to_lean(a) for a in node.args]
+        return fn if not args else f"{fn} {' '.join(args)}"
 
-def _translate_list(node):
-    """ast.List をLeanのリテラルに変換"""
-    elements = [translate_to_lean(el) for el in node.elts]
-    return f"[{', '.join(elements)}]"
+    def visit_ListComp(self, node):
+        def build(gens, elt):
+            if not gens: return translate_to_lean(elt)
+            g, inner = gens[0], build(gens[1:], elt)
+            t, i = translate_to_lean(g.target), translate_to_lean(g.iter)
+            if not g.ifs: return f"({i}).map (fun {t} => {inner})" if len(gens) == 1 else f"({i}).flatMap (fun {t} => {inner})"
+            c = " && ".join(f"({translate_to_lean(cond)})" for cond in g.ifs)
+            return f"({i}).filterMap (fun {t} => if {c} then some ({inner}) else none)" if len(gens) == 1 else f"({i}).filter (fun {t} => {c}).flatMap (fun {t} => {inner})"
+        return build(node.generators, node.elt)
 
-def _translate_tuple(node):
-    """ast.Tuple をLeanのタプルに変換"""
-    elements = [translate_to_lean(el) for el in node.elts]
-    return f"({', '.join(elements)})"
+    def visit_For(self, node): return "/* for ループは現在サポート外。 */"
 
-def _translate_constant(node):
-    """ast.Constant をLeanのリテラルに変換"""
-    if isinstance(node.value, str):
-        return f'"{node.value}"'
-    return str(node.value)
-
-def _translate_name(node):
-    """ast.Name をLeanの識別子に変換"""
-    return node.id
-
-def _translate_attribute(node):
-    """ast.Attribute をLeanのドット記法に変換"""
-    value = translate_to_lean(node.value)
-    return f"{value}.{node.attr}"
-
-def _translate_assign(node):
-    """ast.Assign をLeanのlet定義に変換"""
-    target = translate_to_lean(node.targets[0])
-    value = translate_to_lean(node.value)
-    return f"let {target} := {value};"
-
-def _translate_assert(node):
-    """ast.Assert をLeanの have 文に変換"""
-    test = translate_to_lean(node.test)
-    return f"have : {test} := by sorry"
-
-def _translate_return(node):
-    """ast.Return の中身を変換"""
-    return translate_to_lean(node.value)
-
-def _translate_expr(node):
-    """ast.Expr の中身を変換"""
-    return translate_to_lean(node.value)
-
-def _translate_bin_op(node):
-    """ast.BinOp をLeanの二項演算に変換"""
-    left = translate_to_lean(node.left)
-    right = translate_to_lean(node.right)
-    
-    # Pythonの / (Div) は型に応じて挙動が変わるため、ヘルパー関数 py_div を使用する
-    if isinstance(node.op, ast.Div):
-        return f"(py_div ({left}) ({right}))"
-
-    op_map = {
-        ast.Add: "+", ast.Sub: "-", ast.Mult: "*",
-        ast.FloorDiv: "/", ast.Mod: "%", ast.Pow: "^",
-    }
-    op_symbol = op_map.get(type(node.op))
-    if op_symbol:
-        return f"({left} {op_symbol} {right})"
-    return "/* サポート外の二項演算子 */"
-
-def _translate_if_exp(node):
-    """ast.IfExp (三項演算子) をLeanのif式に変換"""
-    test = translate_to_lean(node.test)
-    body = translate_to_lean(node.body)
-    orelse = translate_to_lean(node.orelse)
-    return f"if {test} then {body} else {orelse}"
-
-def _translate_if(node):
-    """ast.If をLeanのif式に変換"""
-    test = translate_to_lean(node.test)
-    body = translate_to_lean(node.body[0])
-    orelse = translate_to_lean(node.orelse[0]) if node.orelse else "0"
-    return f"if {test} then {body} else {orelse}"
-
-def _translate_bool_op(node):
-    """ast.BoolOp をLeanの論理演算に変換 (and, or)"""
-    op_map = {ast.And: "&&", ast.Or: "||"}
-    op_symbol = op_map.get(type(node.op))
-    if not op_symbol:
-        return "/* サポート外の論理演算子 */"
-    
-    values = [translate_to_lean(v) for v in node.values]
-    return f"({f' {op_symbol} '.join(values)})"
-
-def _translate_unary_op(node):
-    """ast.UnaryOp をLeanの単項演算に変換 (not)"""
-    operand = translate_to_lean(node.operand)
-    if isinstance(node.op, ast.Not):
-        return f"(!{operand})"
-    return "/* サポート外の単項演算子 */"
-
-def _translate_compare(node):
-    """ast.Compare をLeanの比較演算に変換"""
-    op_map = {
-        ast.Eq: "==", ast.NotEq: "≠", ast.Lt: "<",
-        ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=",
-    }
-    
-    parts = []
-    current_left = translate_to_lean(node.left)
-    
-    for op, comparator in zip(node.ops, node.comparators):
-        current_right = translate_to_lean(comparator)
-        op_symbol = op_map.get(type(op), "/* ? */")
-        parts.append(f"({current_left} {op_symbol} {current_right})")
-        current_left = current_right
-        
-    if len(parts) == 1:
-        return parts[0]
-    
-    return f"({' && '.join(parts)})"
 # --- ビルトイン関数・メソッド変換用レジストリ ---
 
 def _handle_decimal_call(node):
@@ -276,102 +141,6 @@ _BUILTIN_CALL_HANDLERS = {
 _METHOD_CALL_HANDLERS = {
     "quantize": _handle_quantize_method,
 }
-
-def _translate_call(node):
-    """ast.Call をLeanの関数適用に変換"""
-    func_name = translate_to_lean(node.func)
-
-    # 名前ベースまたはメソッド名ベースでレジストリからハンドラを検索
-    handler = _BUILTIN_CALL_HANDLERS.get(func_name)
-    if not handler and isinstance(node.func, ast.Attribute):
-        handler = _METHOD_CALL_HANDLERS.get(node.func.attr)
-    
-    if handler:
-        result = handler(node)
-        if result: return result
-
-    args = []
-    for arg in node.args:
-        arg_str = translate_to_lean(arg)
-        # 引数が関数呼び出しやif式の場合は括弧で囲む
-        if isinstance(arg, (ast.Call, ast.IfExp)):
-            arg_str = f"({arg_str})"
-        args.append(arg_str)
-    
-    if not args:
-        return func_name
-    return f"{func_name} {' '.join(args)}"
-
-def _translate_list_comp(node):
-    """ast.ListComp をLeanの List.flatMap/map/filterMap に再帰的に変換"""
-    def build_comp(gens, elt_lean):
-        if not gens:
-            return elt_lean
-        
-        gen = gens[0]
-        target = translate_to_lean(gen.target)
-        iter_val = translate_to_lean(gen.iter)
-        inner_lean = build_comp(gens[1:], elt_lean)
-        
-        if not gen.ifs:
-            if len(gens) == 1:
-                # [elt for x in xs] -> xs.map (fun x => elt)
-                return f"({iter_val}).map (fun {target} => {inner_lean})"
-            else:
-                # [elt for x in xs for y in ys] -> xs.flatMap (fun x => [elt for y in ys])
-                return f"({iter_val}).flatMap (fun {target} => {inner_lean})"
-        else:
-            conds = [translate_to_lean(c) for c in gen.ifs]
-            full_cond = " && ".join(f"({c})" for c in conds)
-            if len(gens) == 1:
-                # [elt for x in xs if cond] -> xs.filterMap (fun x => if cond then some elt else none)
-                return f"({iter_val}).filterMap (fun {target} => if {full_cond} then some ({inner_lean}) else none)"
-            else:
-                # 途中のジェネレータに条件がある場合は filter してから flatMap
-                return f"({iter_val}).filter (fun {target} => {full_cond}).flatMap (fun {target} => {inner_lean})"
-
-    return build_comp(node.generators, translate_to_lean(node.elt))
-
-def _translate_for(node):
-    """ast.For は現在サポート外であることを示すコメントを返す"""
-    return "/* for ループは List.map, List.foldl, または再帰関数への変換が必要なため、現在直接の変換はサポートされていません。リスト内包表記や sum() などの高階関数の使用を検討してください。 */"
-
-
-
-_HANDLERS = {
-    ast.FunctionDef: _translate_function_def,
-    ast.ClassDef: _translate_class_def,
-    ast.Assign: _translate_assign,
-    ast.Constant: _translate_constant,
-    ast.Name: _translate_name,
-    ast.Attribute: _translate_attribute,
-    ast.Return: _translate_return,
-    ast.Assert: _translate_assert,
-    ast.Expr: _translate_expr,
-    ast.BinOp: _translate_bin_op,
-    ast.IfExp: _translate_if_exp,
-    ast.If: _translate_if,
-    ast.BoolOp: _translate_bool_op,
-    ast.UnaryOp: _translate_unary_op,
-    ast.Compare: _translate_compare,
-    ast.List: _translate_list,
-    ast.Tuple: _translate_tuple,
-    ast.Call: _translate_call,
-    ast.ListComp: _translate_list_comp,
-    ast.For: _translate_for,
-}
-
-# --- 変換ロジックのメインディスパッチャ ---
-def translate_to_lean(node):
-    """ASTノードを解析し、対応する変換関数を呼び出す"""
-    if node is None:
-        return ""
-
-    handler = _HANDLERS.get(type(node))
-    if handler:
-        return handler(node)
-    
-    return "/* サポート外 */"
 
 def _analyze_recursion(func_def_node: ast.FunctionDef) -> Tuple[bool, Optional[str]]:
     """
