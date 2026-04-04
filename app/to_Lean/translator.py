@@ -228,70 +228,67 @@ def _translate_compare(node):
         return parts[0]
     
     return f"({' && '.join(parts)})"
+# --- ビルトイン関数・メソッド変換用レジストリ ---
+
+def _handle_decimal_call(node):
+    if len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
+        try:
+            f = fractions.Fraction(node.args[0].value)
+            return f"({f.numerator}/{f.denominator} : Rat)"
+        except Exception: pass
+    return None
+
+def _handle_unary_call(lean_func):
+    return lambda node: f"({lean_func} {translate_to_lean(node.args[0])})" if len(node.args) == 1 else None
+
+def _handle_min_max_call(node):
+    func_name = translate_to_lean(node.func)
+    if len(node.args) >= 2:
+        args_str = [translate_to_lean(arg) for arg in node.args]
+        result = args_str[-1]
+        for arg in reversed(args_str[:-1]):
+            result = f"({func_name} {arg} {result})"
+        return result
+    return None
+
+def _handle_date_call(node):
+    if len(node.args) == 3:
+        a = [translate_to_lean(arg) for arg in node.args]
+        return f"({{ year := {a[0]}, month := {a[1]}, day := {a[2]} }} : Date)"
+    return None
+
+def _handle_quantize_method(node):
+    target = translate_to_lean(node.func.value)
+    is_half_up = any(kw.arg == "rounding" and isinstance(kw.value, ast.Name) and kw.value.id == "ROUND_HALF_UP" for kw in node.keywords)
+    return f"(py_round_half_up {target})" if is_half_up else None
+
+_BUILTIN_CALL_HANDLERS = {
+    "Decimal": _handle_decimal_call, "decimal.Decimal": _handle_decimal_call,
+    "math.ceil": _handle_unary_call("py_ceil"), "ceil": _handle_unary_call("py_ceil"),
+    "math.floor": _handle_unary_call("py_floor"), "floor": _handle_unary_call("py_floor"),
+    "round": _handle_unary_call("py_round"),
+    "sum": _handle_unary_call("py_sum"),
+    "len": _handle_unary_call("List.length"),
+    "min": _handle_min_max_call, "max": _handle_min_max_call,
+    "date": _handle_date_call, "datetime.date": _handle_date_call,
+}
+
+_METHOD_CALL_HANDLERS = {
+    "quantize": _handle_quantize_method,
+}
 
 def _translate_call(node):
     """ast.Call をLeanの関数適用に変換"""
     func_name = translate_to_lean(node.func)
+
+    # 名前ベースまたはメソッド名ベースでレジストリからハンドラを検索
+    handler = _BUILTIN_CALL_HANDLERS.get(func_name)
+    if not handler and isinstance(node.func, ast.Attribute):
+        handler = _METHOD_CALL_HANDLERS.get(node.func.attr)
     
-    # Decimalのコンストラクタ呼び出しを特別扱いして Rat に変換
-    if func_name == "Decimal" or func_name == "decimal.Decimal":
-        if len(node.args) == 1:
-            arg = node.args[0]
-            # 文字列または数値リテラルの場合、正確な有理数に変換
-            if isinstance(arg, ast.Constant):
-                try:
-                    val = arg.value
-                    # 文字列または数値からFractionを作成
-                    f = fractions.Fraction(val)
-                    return f"({f.numerator}/{f.denominator} : Rat)"
-                except Exception:
-                    pass
-
-    # 丸め関数 (round, ceil, floor) の対応
-    if func_name in ("math.ceil", "ceil"):
-        if len(node.args) == 1:
-            return f"(py_ceil {translate_to_lean(node.args[0])})"
-
-    if func_name in ("math.floor", "floor"):
-        if len(node.args) == 1:
-            return f"(py_floor {translate_to_lean(node.args[0])})"
-
-    if func_name == "round":
-        if len(node.args) == 1:
-            return f"(py_round {translate_to_lean(node.args[0])})"
-
-    # Decimal.quantize(..., rounding=ROUND_HALF_UP) の簡易対応
-    if isinstance(node.func, ast.Attribute) and node.func.attr == "quantize":
-        target = translate_to_lean(node.func.value)
-        # キーワード引数 rounding をチェック
-        is_half_up = any(kw.arg == "rounding" and isinstance(kw.value, ast.Name) and kw.value.id == "ROUND_HALF_UP" for kw in node.keywords)
-        if is_half_up:
-            return f"(py_round_half_up {target})"
-            
-    # List built-ins
-    if func_name == "sum":
-        if len(node.args) == 1:
-            return f"(py_sum {translate_to_lean(node.args[0])})"
-    
-    if func_name == "len":
-        if len(node.args) == 1:
-            return f"(List.length {translate_to_lean(node.args[0])})"
-
-    # min, max の可変長引数対応 (例: min(a, b, c) -> min a (min b c))
-    if func_name in ("min", "max"):
-        if len(node.args) >= 2:
-            args_str = [translate_to_lean(arg) for arg in node.args]
-            # 後ろから再帰的に畳み込む
-            result = args_str[-1]
-            for arg in reversed(args_str[:-1]):
-                result = f"({func_name} {arg} {result})"
-            return result
-
-    # Date constructor
-    if func_name in ("date", "datetime.date"):
-        if len(node.args) == 3:
-            args_str = [translate_to_lean(arg) for arg in node.args]
-            return f"({{ year := {args_str[0]}, month := {args_str[1]}, day := {args_str[2]} }} : Date)"
+    if handler:
+        result = handler(node)
+        if result: return result
 
     args = []
     for arg in node.args:
