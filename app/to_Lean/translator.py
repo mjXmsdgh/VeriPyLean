@@ -12,24 +12,50 @@ class LeanTranslator(ast.NodeVisitor):
     """ASTを巡回してLeanコードを生成するビジター"""
     def generic_visit(self, node): return "/* サポート外 */"
 
-    def visit_FunctionDef(self, node):
+    def _extract_doc_and_body(self, node):
+        """ノードからdocstringを除去した本体ステートメントを返す"""
         doc = ast.get_docstring(node)
-        stmts = node.body[1:] if doc and len(node.body) > 0 and isinstance(node.body[0], ast.Expr) else node.body
-        args = " ".join([f"({a.arg} : {types.translate_type(a.annotation)})" for a in node.args.args])
+        stmts = node.body
+        # docstringが最初の式として存在する場合、bodyから除外
+        if doc and stmts and isinstance(stmts[0], ast.Expr):
+            stmts = stmts[1:]
+        return doc, stmts
+
+    def _format_args(self, args_node):
+        """関数引数を (name : Type) の形式で結合する"""
+        return " ".join([f"({a.arg} : {types.translate_type(a.annotation)})" for a in args_node.args])
+
+    def _wrap_if_complex(self, arg_node):
+        """結合順序が紛らわしい式（CallやIfExp）を括弧で囲む"""
+        lean_str = translate_to_lean(arg_node)
+        if isinstance(arg_node, (ast.Call, ast.IfExp)):
+            return f"({lean_str})"
+        return lean_str
+
+    def visit_FunctionDef(self, node):
+        doc, stmts = self._extract_doc_and_body(node)
+        args = self._format_args(node.args)
         is_thm = node.name.startswith(("verify_", "theorem_"))
+        
+        # 本体の変換
         body_lines = [translate_to_lean(s) for s in stmts] or ["sorry"]
+        doc_prefix = f"/-- {doc} -/\n" if doc else ""
+
         if is_thm:
-            prop = translate_to_lean(stmts[-1].value) if isinstance(stmts[-1], ast.Return) else "True"
-            if isinstance(stmts[-1], ast.Return): body_lines = body_lines[:-1]
-            res = f"{'/-- ' + doc + ' -/ ' if doc else ''}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
+            # 定理(theorem)の場合は最後のReturnを命題として扱う
+            is_ret = isinstance(stmts[-1], ast.Return)
+            prop = translate_to_lean(stmts[-1].value) if is_ret else "True"
+            if is_ret: body_lines = body_lines[:-1]
+            res = f"{doc_prefix}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
         else:
-            res = f"{'/-- ' + doc + ' -/ ' if doc else ''}def {node.name} {args} : {types.translate_type(node.returns)} :=\n  " + "\n  ".join(body_lines)
+            res = f"{doc_prefix}def {node.name} {args} : {types.translate_type(node.returns)} :=\n  " + "\n  ".join(body_lines)
+
+        # 再帰解析の統合
         is_rec, hint = _analyze_recursion(node)
         if is_rec:
-            if hint: res += f"\ntermination_by {hint}"
-            else: res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
+            res += f"\ntermination_by {hint}" if hint else ""
+            if not hint: res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
         return res
-
     def visit_ClassDef(self, node):
         is_enum = any(isinstance(b, ast.Name) and b.id == "Enum" for b in node.bases)
         is_dc = any((isinstance(d, ast.Name) and d.id == "dataclass") or (isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "dataclass") for d in node.decorator_list)
@@ -78,7 +104,7 @@ class LeanTranslator(ast.NodeVisitor):
         if h:
             res = h(node)
             if res: return res
-        args = [f"({translate_to_lean(a)})" if isinstance(a, (ast.Call, ast.IfExp)) else translate_to_lean(a) for a in node.args]
+        args = [self._wrap_if_complex(a) for a in node.args]
         return fn if not args else f"{fn} {' '.join(args)}"
 
     def visit_ListComp(self, node):
