@@ -7,29 +7,21 @@ class LeanTranslator(ast.NodeVisitor):
     """Python ASTを走査し、再帰的にLean 4の構文へと変換するメインビジター"""
     def __init__(self, context):
         self.context = context
-        # 文字列テンプレートの定義
-        self.templates = {
-            "doc": "/-- {doc} -/\n",
-            "def": "{doc}def {name} {args} : {ret_type} :=\n  {body}{term}",
-            "theorem": "{doc}theorem {name} {args} : {prop} :=\n  {body}\n  by sorry",
-            "warn_rec": "-- [PyLean] Warning: No termination measure found.\n{code}",
-            "field": "{name} : {type}",
-            "enum_variant": "| {name}"
-        }
+        self.emitter = context.emitter
         # ディスパッチ・テーブル: 型をキーに関数をマッピング
         self.dispatch = {
-            ast.Constant: lambda n: f'"{n.value}"' if isinstance(n.value, str) else str(n.value),
+            ast.Constant: lambda n: self.emitter.format_constant(n.value),
             ast.Name: lambda n: n.id,
-            ast.Attribute: lambda n: f"{self._v(n.value)}.{n.attr}",
+            ast.Attribute: lambda n: self.emitter.format_attribute(self._v(n.value), n.attr),
             ast.Return: lambda n: self._v(n.value),
             ast.Expr: lambda n: self._v(n.value),
-            ast.Assign: lambda n: f"let {self._v(n.targets[0])} := {self._v(n.value)};",
+            ast.Assign: lambda n: self.emitter.format_assign(self._v(n.targets[0]), self._v(n.value)),
             ast.Pass: lambda _: "()",
-            ast.Assert: lambda n: f"have : {self._v(n.test)} := by sorry",
-            ast.IfExp: lambda n: f"if {self._v(n.test)} then {self._v(n.body)} else {self._v(n.orelse)}",
-            ast.If: lambda n: f"if {self._v(n.test)} then {self._v(n.body[0])} else {self._v(n.orelse[0]) if n.orelse else '0'}",
-            ast.List: lambda n: f"[{', '.join([self._v(e) for e in n.elts])}]",
-            ast.Tuple: lambda n: f"({', '.join([self._v(e) for e in n.elts])})",
+            ast.Assert: lambda n: self.emitter.format_assert(self._v(n.test)),
+            ast.IfExp: lambda n: self.emitter.format_if_exp(self._v(n.test), self._v(n.body), self._v(n.orelse)),
+            ast.If: lambda n: self.emitter.format_if_stmt(self._v(n.test), [self._v(s) for s in n.body], [self._v(s) for s in n.orelse] if n.orelse else ["0"]),
+            ast.List: lambda n: self.emitter.format_collection([self._v(e) for e in n.elts]),
+            ast.Tuple: lambda n: self.emitter.format_collection([self._v(e) for e in n.elts], "(", ")"),
             # 演算子系は共通メソッドへ委譲
             ast.BinOp: self._visit_op,
             ast.UnaryOp: self._visit_op,
@@ -104,17 +96,17 @@ class LeanTranslator(ast.NodeVisitor):
         """演算子系のノード（BinOp, UnaryOp, BoolOp, Compare）を統合処理する"""
         if isinstance(node, ast.BinOp):
             l, r = self._v(node.left), self._v(node.right)
-            if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
+            if isinstance(node.op, ast.Div): return self.emitter.format_binop(l, "/", r, is_div=True)
             op = constants.BIN_OPS.get(type(node.op))
-            return f"({l} {op} {r})" if op else self._unsupported(node.op)
+            return self.emitter.format_binop(l, op, r) if op else self._unsupported(node.op)
 
         if isinstance(node, ast.UnaryOp):
             op = constants.UNARY_OPS.get(type(node.op))
-            return f"({op}{self._v(node.operand)})" if op else self._unsupported(node.op)
+            return self.emitter.format_unaryop(op, self._v(node.operand)) if op else self._unsupported(node.op)
 
         if isinstance(node, ast.BoolOp):
             op = constants.BOOL_OPS.get(type(node.op), "??")
-            return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
+            return self.emitter.format_boolop(op, [self._v(v) for v in node.values])
 
         if isinstance(node, ast.Compare):
             parts, curr = [], self._v(node.left)
@@ -122,7 +114,7 @@ class LeanTranslator(ast.NodeVisitor):
                 next_v = self._v(comp)
                 parts.append(f"({curr} {constants.COMP_OPS.get(type(op), '?')} {next_v})")
                 curr = next_v
-            return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
+            return self.emitter.format_compare(parts)
 
         return self._unsupported(node)
 
@@ -141,16 +133,15 @@ class LeanTranslator(ast.NodeVisitor):
     def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
 
     def _translate_enum(self, node):
-        variants = [self.templates["enum_variant"].format(name=t.id)
+        variants = [t.id
                     for s in node.body if isinstance(s, ast.Assign) 
                     for t in s.targets if isinstance(t, ast.Name)]
-        # 項目をインデント付きで結合
-        return constants.IND_TEMPLATE.format(name=node.name, items="\n  ".join(variants))
+        return self.emitter.format_inductive(node.name, variants)
 
     def _translate_structure(self, node):
-        fields = [self.templates["field"].format(name=s.target.id, type=types.translate_type(s.annotation))
+        fields = [(s.target.id, types.translate_type(s.annotation))
                   for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-        return constants.STRUCT_TEMPLATE.format(name=node.name, items="\n  ".join(fields))
+        return self.emitter.format_structure(node.name, fields)
 
     def _translate_list_comp(self, generators, elt):
         """
@@ -167,29 +158,15 @@ class LeanTranslator(ast.NodeVisitor):
             iterable = self._v(gen.iter)
             conditions = [self._v(c) for c in gen.ifs]
             cond_str = " && ".join(f"({c})" for c in conditions) if conditions else None
+            
+            # emitter を使って Lean の高階関数呼び出しを生成
+            current_lean_expr = self.emitter.format_list_comp_step(
+                iterable, target, current_lean_expr, cond_str, is_innermost=(i == 0)
+            )
 
-            # 最初のジェネレータ（Pythonのリスト内包表記の最も内側のジェネレータ）
-            is_innermost_generator = (i == 0)
-
-            if is_innermost_generator:
-                if cond_str:
-                    # 内側のジェネレータで条件がある場合: filterMap
-                    current_lean_expr = f"({iterable}).filterMap (fun {target} => if {cond_str} then some ({current_lean_expr}) else none)"
-                else:
-                    # 内側のジェネレータで条件がない場合: map
-                    current_lean_expr = f"({iterable}).map (fun {target} => {current_lean_expr})"
-            else:
-                if cond_str:
-                    # 外側のジェネレータで条件がある場合: filter と flatMap
-                    current_lean_expr = f"({iterable}).filter (fun {target} => {cond_str}).flatMap (fun {target} => {current_lean_expr})"
-                else:
-                    # 外側のジェネレータで条件がない場合: flatMap
-                    current_lean_expr = f"({iterable}).flatMap (fun {target} => {current_lean_expr})"
-        
         return current_lean_expr
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
-        doc_str = self.templates["doc"].format(doc=doc) if doc else ""
         body_lines = [self._v(s) for s in stmts] or ["sorry"]
 
         if is_thm:
@@ -197,20 +174,11 @@ class LeanTranslator(ast.NodeVisitor):
             is_ret = isinstance(stmts[-1], ast.Return)
             prop = self._v(stmts[-1].value) if is_ret else "True"
             if is_ret: body_lines = body_lines[:-1]
-
-            res = self.templates["theorem"].format(
-                doc=doc_str, name=node.name, args=args, prop=prop,
-                body="\n  ".join(body_lines) if body_lines else "skip"
-            )
+            return self.emitter.format_theorem(node.name, args, prop, body_lines, doc)
         else:
-            res = self.templates["def"].format(
-                doc=doc_str, name=node.name, args=args,
-                ret_type=types.translate_type(node.returns),
-                body="\n  ".join(body_lines),
-                term=f"\ntermination_by {meta['hint']}" if meta.get("hint") else ""
+            return self.emitter.format_function(
+                node.name, args, types.translate_type(node.returns), body_lines,
+                doc=doc,
+                termination_hint=meta.get("hint"),
+                is_recursive=meta.get("is_recursive", False)
             )
-
-        if meta.get("is_recursive") and not meta.get("hint"):
-            res = self.templates["warn_rec"].format(code=res)
-
-        return res
