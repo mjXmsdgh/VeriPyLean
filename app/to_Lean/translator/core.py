@@ -21,7 +21,7 @@ class LeanTranslator(ast.NodeVisitor):
             ast.IfExp: lambda n: f"if {self._v(n.test)} then {self._v(n.body)} else {self._v(n.orelse)}",
             ast.List: lambda n: f"[{', '.join([self._v(e) for e in n.elts])}]",
             ast.Tuple: lambda n: f"({', '.join([self._v(e) for e in n.elts])})",
-            ast.ListComp: lambda n: self._translate_list_comp_recursive(n.generators, n.elt),
+            ast.ListComp: lambda n: self._translate_list_comp(n.generators, n.elt),
             ast.For: lambda _: "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion.",
             # 演算子系は共通メソッドへ委譲
             ast.BinOp: self._visit_op,
@@ -184,18 +184,30 @@ class LeanTranslator(ast.NodeVisitor):
         builder.add(constants.DERIVING_FOOTER)
         return builder.build()
 
-    def _translate_list_comp_recursive(self, generators, elt):
-        if not generators: return self._v(elt)
-        gen, *rest = generators
-        inner = self._translate_list_comp_recursive(rest, elt)
-        target, iterable = self._v(gen.target), self._v(gen.iter)
-        if not gen.ifs:
-            method = "map" if not rest else "flatMap"
-            return f"({iterable}).{method} (fun {target} => {inner})"
-        cond = " && ".join(f"({self._v(c)})" for c in gen.ifs)
-        if not rest:
-            return f"({iterable}).filterMap (fun {target} => if {cond} then some ({inner}) else none)"
-        return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
+    def _translate_list_comp(self, generators, elt):
+        """リスト内包表記を map/flatMap/filter/filterMap の組み合わせに反復的に変換する"""
+        current_expr = self._v(elt)
+
+        # 内側（最後）のジェネレータから外側に向かって式を構築する
+        for i, gen in enumerate(reversed(generators)):
+            target = self._v(gen.target)
+            iterable = self._v(gen.iter)
+            cond = " && ".join(f"({self._v(c)})" for c in gen.ifs) if gen.ifs else None
+            
+            is_innermost = (i == 0)
+
+            if is_innermost:
+                if cond:
+                    current_expr = f"({iterable}).filterMap (fun {target} => if {cond} then some ({current_expr}) else none)"
+                else:
+                    current_expr = f"({iterable}).map (fun {target} => {current_expr})"
+            else:
+                if cond:
+                    current_expr = f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {current_expr})"
+                else:
+                    current_expr = f"({iterable}).flatMap (fun {target} => {current_expr})"
+        
+        return current_expr
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
         builder = CodeBuilder()
