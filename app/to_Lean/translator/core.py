@@ -69,3 +69,11 @@ class LeanTranslator(ast.NodeVisitor):
         if isinstance(node, trigger_types):
             return f"({res})"
         return res
+
+def translate_to_lean(node, context=None):
+    """ASTノードをLeanコード文字列に変換する"""
+    if context is None:
+        from .context import TranslationContext
+        context = TranslationContext()
+    visitor = LeanTranslator(context)
+    return visitor.visit(node)

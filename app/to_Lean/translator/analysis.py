@@ -1,5 +1,6 @@
 import ast
 from typing import Tuple, Optional
+from .context import TranslationContext
 
 class AnalysisVisitor(ast.NodeVisitor):
     """
@@ -55,8 +56,10 @@ class AnalysisVisitor(ast.NodeVisitor):
         RecursionChecker().visit(func_node)
         return res["is_recursive"], res["hint"]
 
-def analyze(node, context):
+def analyze(node, context=None):
     """ASTを解析してコンテキストに情報を格納する"""
+    if context is None:
+        context = TranslationContext()
     visitor = AnalysisVisitor(context)
     visitor.visit(node)
     return context
