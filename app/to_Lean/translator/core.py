@@ -95,29 +95,36 @@ class LeanTranslator(ast.NodeVisitor):
 
     def _visit_op(self, node):
         """演算子系のノード（BinOp, UnaryOp, BoolOp, Compare）を統合処理する"""
+        # 演算子のカテゴリごとにフォーマット処理を振り分ける
         if isinstance(node, ast.BinOp):
-            l, r = self._v(node.left), self._v(node.right)
-            if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
-            op = constants.BIN_OPS.get(type(node.op))
-            return f"({l} {op} {r})" if op else self._unsupported(node.op)
-
+            return self._format_binop(node)
         if isinstance(node, ast.UnaryOp):
             op = constants.UNARY_OPS.get(type(node.op))
-            return f"({op}{self._v(node.operand)})" if op else self._unsupported(node.op)
-
+            return f"({op}{self._wrap(node.operand)})" if op else self._unsupported(node.op)
         if isinstance(node, ast.BoolOp):
             op = constants.BOOL_OPS.get(type(node.op), "??")
-            return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
-
+            return f"({(f' {op} ').join([self._wrap(v) for v in node.values])})"
         if isinstance(node, ast.Compare):
-            parts, curr = [], self._v(node.left)
-            for op, comp in zip(node.ops, node.comparators):
-                next_v = self._v(comp)
-                parts.append(f"({curr} {constants.COMP_OPS.get(type(op), '?')} {next_v})")
-                curr = next_v
-            return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
-
+            return self._format_compare(node)
         return self._unsupported(node)
+
+    def _format_binop(self, node):
+        """二項演算をフォーマットする。/ (Div) は特殊なヘルパーに変換する。"""
+        l, r = self._wrap(node.left), self._wrap(node.right)
+        if isinstance(node.op, ast.Div):
+            return f"(py_div {l} {r})"
+        op = constants.BIN_OPS.get(type(node.op))
+        return f"({l} {op} {r})" if op else self._unsupported(node.op)
+
+    def _format_compare(self, node):
+        """連結比較 (a < b < c) を Lean の論理積に展開する"""
+        parts = []
+        curr_left = node.left
+        for op_node, next_node in zip(node.ops, node.comparators):
+            op = constants.COMP_OPS.get(type(op_node), "?")
+            parts.append(f"({self._v(curr_left)} {op} {self._v(next_node)})")
+            curr_left = next_node
+        return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
 
     def _translate_block(self, builder, stmts, is_theorem=False):
         """複数のステートメントをLeanのブロックとして変換し、builderに追加する共通ロジック"""
