@@ -1,6 +1,6 @@
 import ast
-import fractions
 from .. import constants
+from .calls import handle_call
 
 def handle_op(node, v):
     """演算子系のノード（BinOp, UnaryOp, BoolOp, Compare）を統合処理する"""
@@ -49,55 +49,3 @@ def handle_list_comp(node, v):
             else:
                 current_expr = f"({iterable}).flatMap (fun {target} => {current_expr})"
     return current_expr
-
-def handle_call(node, v):
-    """関数呼び出しの変換をハンドリングする（組み込みハンドラを含む）"""
-    fn = v._v(node.func)
-    h = BUILTIN_CALL_HANDLERS.get(fn) or (isinstance(node.func, ast.Attribute) and METHOD_CALL_HANDLERS.get(node.func.attr))
-    if h:
-        res = h(node, v)
-        if res: return res
-    args = [v._wrap(a, trigger_types=(ast.IfExp, ast.BinOp)) for a in node.args]
-    return fn if not args else f"{fn} {' '.join(args)}"
-
-def _handle_decimal_call(node, visitor):
-    if len(node.args) == 1 and isinstance(node.args[0], ast.Constant):
-        try:
-            f = fractions.Fraction(node.args[0].value)
-            return f"({f.numerator}/{f.denominator} : Rat)"
-        except Exception: pass
-    return None
-
-def _handle_unary_call(lean_func):
-    return lambda node, visitor: f"({lean_func} {visitor._v(node.args[0])})" if len(node.args) == 1 else None
-
-def _handle_min_max_call(node, visitor):
-    func_name = visitor._v(node.func)
-    if len(node.args) >= 2:
-        args_str = [visitor._v(arg) for arg in node.args]
-        result = args_str[-1]
-        for arg in reversed(args_str[:-1]):
-            result = f"({func_name} {arg} {result})"
-        return result
-    return None
-
-def _handle_date_call(node, visitor):
-    if len(node.args) == 3:
-        a = [visitor._v(arg) for arg in node.args]
-        return f"({{ year := {a[0]}, month := {a[1]}, day := {a[2]} }} : Date)"
-    return None
-
-def _handle_quantize_method(node, visitor):
-    target = visitor._v(node.func.value)
-    is_half_up = any(kw.arg == "rounding" and isinstance(kw.value, ast.Name) and kw.value.id == "ROUND_HALF_UP" for kw in node.keywords)
-    return f"(py_round_half_up {target})" if is_half_up else None
-
-BUILTIN_CALL_HANDLERS = {
-    "Decimal": _handle_decimal_call, "decimal.Decimal": _handle_decimal_call,
-    "math.ceil": _handle_unary_call("py_ceil"), "ceil": _handle_unary_call("py_ceil"),
-    "math.floor": _handle_unary_call("py_floor"), "floor": _handle_unary_call("py_floor"),
-    "round": _handle_unary_call("py_round"), "sum": _handle_unary_call("py_sum"),
-    "len": _handle_unary_call("List.length"), "min": _handle_min_max_call, "max": _handle_min_max_call,
-    "date": _handle_date_call, "datetime.date": _handle_date_call,
-}
-METHOD_CALL_HANDLERS = {"quantize": _handle_quantize_method}
