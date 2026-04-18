@@ -32,10 +32,13 @@ UNARY_OPS = {
 
 # --- テンプレート定義 ---
 
-IND_TEMPLATE = """inductive {name} where
-{items}
-deriving Repr, BEq"""
+DOC_TEMPLATE = "/-- {doc} -/"
+IND_HEADER = "inductive {name} where"
+STRUCT_HEADER = "structure {name} where"
+DERIVING_FOOTER = "deriving Repr, BEq"
 
-STRUCT_TEMPLATE = """structure {name} where
-{items}
-deriving Repr, BEq"""
+DEF_HEADER = "def {name} {args} : {ret_type} :="
+THM_HEADER = "theorem {name} {args} : {prop} :="
+THM_PROOF = "by sorry"
+TERMINATION_BY = "termination_by {hint}"
+REC_WARN = "-- [PyLean] Warning: No termination measure found.\n{code}"

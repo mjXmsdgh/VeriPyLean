@@ -127,22 +127,22 @@ class LeanTranslator(ast.NodeVisitor):
 
     def _translate_enum(self, node):
         builder = CodeBuilder()
-        with builder.block(f"inductive {node.name} where"):
+        with builder.block(constants.IND_HEADER.format(name=node.name)):
             for s in node.body:
                 if isinstance(s, ast.Assign):
                     for t in s.targets:
                         if isinstance(t, ast.Name):
                             builder.add(f"| {t.id}")
-        builder.add("deriving Repr, BEq")
+        builder.add(constants.DERIVING_FOOTER)
         return builder.build()
 
     def _translate_structure(self, node):
         builder = CodeBuilder()
-        with builder.block(f"structure {node.name} where"):
+        with builder.block(constants.STRUCT_HEADER.format(name=node.name)):
             for s in node.body:
                 if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
                     builder.add(f"{s.target.id} : {types.translate_type(s.annotation)}")
-        builder.add("deriving Repr, BEq")
+        builder.add(constants.DERIVING_FOOTER)
         return builder.build()
 
     def _translate_list_comp_recursive(self, generators, elt):
@@ -161,13 +161,21 @@ class LeanTranslator(ast.NodeVisitor):
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
         builder = CodeBuilder()
         if doc:
-            builder.add(f"/-- {doc} -/")
+            builder.add(constants.DOC_TEMPLATE.format(doc=doc))
 
         is_ret = is_thm and isinstance(stmts[-1], ast.Return)
         prop = self._v(stmts[-1].value) if is_ret else "True"
         ret_type = types.translate_type(node.returns)
         
-        header = f"{'theorem' if is_thm else 'def'} {node.name} {args} : {prop if is_thm else ret_type} :="
+        if is_thm:
+            header = constants.THM_HEADER.format(
+                name=node.name, args=args, prop=prop
+            )
+        else:
+            header = constants.DEF_HEADER.format(
+                name=node.name, args=args, ret_type=ret_type
+            )
+
         body_stmts = stmts[:-1] if is_ret else stmts
 
         with builder.block(header):
@@ -178,13 +186,13 @@ class LeanTranslator(ast.NodeVisitor):
                     for line in self._v(s).splitlines():
                         builder.add(line)
                 if is_thm:
-                    builder.add("by sorry")
+                    builder.add(constants.THM_PROOF)
 
         hint = meta.get("hint")
         if meta.get("is_recursive"):
             if hint:
-                builder.add(f"termination_by {hint}")
+                builder.add(constants.TERMINATION_BY.format(hint=hint))
             else:
-                return f"-- [PyLean] Warning: No termination measure found.\n{builder.build()}"
+                return constants.REC_WARN.format(code=builder.build())
         
         return builder.build()
