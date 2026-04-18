@@ -2,23 +2,24 @@ import ast
 from .. import types
 from . import constants
 from . import handlers
-from .context import CodeBuilder
+from .emitter import LeanEmitter
 
 class LeanTranslator(ast.NodeVisitor):
     """Python ASTを走査し、再帰的にLean 4の構文へと変換するメインビジター"""
     def __init__(self, context):
         self.context = context
-        # ディスパッチ・テーブル: 型をキーに関数をマッピングし、ボイラープレートを削減
+        self.emitter = LeanEmitter(context)
+        # ディスパッチ・テーブル: 変換ロジックをマッピング
         self.dispatch = {
             ast.Constant: lambda n: f'"{n.value}"' if isinstance(n.value, str) else str(n.value),
             ast.Name: lambda n: n.id,
             ast.Attribute: lambda n: f"{self._v(n.value)}.{n.attr}",
             ast.Return: lambda n: self._v(n.value),
             ast.Expr: lambda n: self._v(n.value),
-            ast.Assign: lambda n: f"let {self._v(n.targets[0])} := {self._v(n.value)};",
-            ast.Assert: lambda n: f"have : {self._v(n.test)} := by sorry;",
+            ast.Assign: lambda n: self.emitter.format_let(self._v(n.targets[0]), self._v(n.value)),
+            ast.Assert: lambda n: self.emitter.format_have(self._v(n.test)),
             ast.Pass: lambda _: "()",
-            ast.IfExp: lambda n: f"if {self._v(n.test)} then {self._v(n.body)} else {self._v(n.orelse)}",
+            ast.IfExp: lambda n: self.emitter.format_if_expr(self._v(n.test), self._v(n.body), self._v(n.orelse)),
             ast.List: lambda n: f"[{', '.join([self._v(e) for e in n.elts])}]",
             ast.Tuple: lambda n: f"({', '.join([self._v(e) for e in n.elts])})",
             ast.ListComp: lambda n: self._translate_list_comp(n.generators, n.elt),
@@ -128,34 +129,23 @@ class LeanTranslator(ast.NodeVisitor):
             curr_left = next_node
         return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
 
-    def _translate_block(self, builder, stmts, is_theorem=False):
-        """複数のステートメントをLeanのブロックとして変換し、builderに追加する共通ロジック"""
+    def _get_block_lines(self, stmts, is_theorem=False):
+        """複数のステートメントを変換し、行のリストとして返す"""
         if not stmts:
-            builder.add("()" if not is_theorem else "True")
-            return
-
+            return ["()" if not is_theorem else "True"]
+        
+        lines = []
         for i, stmt in enumerate(stmts):
-            translated = self._v(stmt)
-            # 各ステートメントの出力を1行ずつbuilderに渡す
-            for line in translated.splitlines():
-                builder.add(line)
-            
-            # 最後のステートメントが代入や表明(let/have)で終わる場合、
-            # Leanの式を完結させるためのダミー値を追加する
+            lines.append(self._v(stmt))
             if i == len(stmts) - 1:
                 if isinstance(stmt, (ast.Assign, ast.Assert)):
-                    builder.add("()" if not is_theorem else "True")
+                    lines.append("()" if not is_theorem else "True")
+        return lines
 
     def visit_If(self, node):
-        builder = CodeBuilder()
-        with builder.block(f"if {self._v(node.test)} then"):
-            self._translate_block(builder, node.body)
-        if node.orelse:
-            with builder.block("else"):
-                self._translate_block(builder, node.orelse)
-        else:
-            builder.add("else ()")
-        return builder.build()
+        then_lines = self._get_block_lines(node.body)
+        else_lines = self._get_block_lines(node.orelse) if node.orelse else None
+        return self.emitter.format_if_stmt(self._v(node.test), then_lines, else_lines)
 
     def visit_Call(self, node):
         fn = self._v(node.func)
@@ -167,24 +157,23 @@ class LeanTranslator(ast.NodeVisitor):
         return fn if not args else f"{fn} {' '.join(args)}"
 
     def _translate_enum(self, node):
-        builder = CodeBuilder()
-        with builder.block(constants.IND_HEADER.format(name=node.name)):
-            for s in node.body:
-                if isinstance(s, ast.Assign):
-                    for t in s.targets:
-                        if isinstance(t, ast.Name):
-                            builder.add(f"| {t.id}")
-        builder.add(constants.DERIVING_FOOTER)
-        return builder.build()
+        variants = []
+        for s in node.body:
+            if isinstance(s, ast.Assign):
+                for t in s.targets:
+                    if isinstance(t, ast.Name):
+                        variants.append(t.id)
+        return self.emitter.format_inductive(node.name, variants)
 
     def _translate_structure(self, node):
-        builder = CodeBuilder()
-        with builder.block(constants.STRUCT_HEADER.format(name=node.name)):
-            for s in node.body:
-                if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
-                    builder.add(f"{s.target.id} : {types.translate_type(s.annotation, self.context)}")
-        builder.add(constants.DERIVING_FOOTER)
-        return builder.build()
+        fields = []
+        for s in node.body:
+            if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
+                fields.append((
+                    s.target.id, 
+                    types.translate_type(s.annotation, self.context)
+                ))
+        return self.emitter.format_structure(node.name, fields)
 
     def _translate_list_comp(self, generators, elt):
         """リスト内包表記を map/flatMap/filter/filterMap の組み合わせに反復的に変換する"""
@@ -212,39 +201,19 @@ class LeanTranslator(ast.NodeVisitor):
         return current_expr
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
-        builder = CodeBuilder()
-        if doc:
-            builder.add(constants.DOC_TEMPLATE.format(doc=doc))
-
         is_ret = is_thm and isinstance(stmts[-1], ast.Return)
-        prop = self._v(stmts[-1].value) if is_ret else "True"
-        ret_type = types.translate_type(node.returns, self.context)
+        body_stmts = stmts[:-1] if is_ret else stmts
         
         if is_thm:
-            header = constants.THM_HEADER.format(
-                name=node.name, args=args, prop=prop
-            )
+            prop = self._v(stmts[-1].value) if is_ret else "True"
+            body_lines = self._get_block_lines(body_stmts, is_theorem=True)
+            return self.emitter.format_theorem(node.name, args, prop, body_lines, doc=doc)
         else:
-            header = constants.DEF_HEADER.format(
-                name=node.name, args=args, ret_type=ret_type
+            ret_type = types.translate_type(node.returns, self.context)
+            body_lines = self._get_block_lines(body_stmts, is_theorem=False)
+            return self.emitter.format_function(
+                node.name, args, ret_type, body_lines, 
+                doc=doc, 
+                termination_hint=meta.get("hint"),
+                is_recursive=meta.get("is_recursive")
             )
-
-        body_stmts = stmts[:-1] if is_ret else stmts
-
-        with builder.block(header):
-            if not body_stmts and not is_thm:
-                builder.add("sorry")
-            elif is_thm:
-                self._translate_block(builder, body_stmts, is_theorem=True)
-                builder.add(constants.THM_PROOF)
-            else:
-                self._translate_block(builder, body_stmts, is_theorem=False)
-
-        hint = meta.get("hint")
-        if meta.get("is_recursive"):
-            if hint:
-                builder.add(constants.TERMINATION_BY.format(hint=hint))
-            else:
-                return constants.REC_WARN.format(code=builder.build())
-        
-        return builder.build()
