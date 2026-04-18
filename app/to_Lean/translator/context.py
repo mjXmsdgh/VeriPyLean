@@ -39,4 +39,5 @@ class TranslationContext:
     def add_warning(self, node, message):
         """解析・変換中に発生した制限事項やエラーを警告として記録する"""
         line = getattr(node, 'lineno', 'unknown')
-        self.warnings.append(f"Line {line}: {message}")
+        col = getattr(node, 'col_offset', 'unknown')
+        self.warnings.append(f"Line {line}, Col {col}: {message}")

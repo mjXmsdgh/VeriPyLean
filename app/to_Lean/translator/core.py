@@ -22,7 +22,7 @@ class LeanTranslator(ast.NodeVisitor):
             ast.List: lambda n: f"[{', '.join([self._v(e) for e in n.elts])}]",
             ast.Tuple: lambda n: f"({', '.join([self._v(e) for e in n.elts])})",
             ast.ListComp: lambda n: self._translate_list_comp(n.generators, n.elt),
-            ast.For: lambda _: "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion.",
+            ast.For: lambda n: self._unsupported(n, "Use list comprehensions or recursion instead of for-loops"),
             # 演算子系は共通メソッドへ委譲
             ast.BinOp: self._visit_op,
             ast.UnaryOp: self._visit_op,
@@ -52,10 +52,12 @@ class LeanTranslator(ast.NodeVisitor):
     def _unsupported(self, node, detail=None):
         """サポート外の機能に遭遇した際の共通処理"""
         node_type = type(node).__name__
+        line = getattr(node, 'lineno', '?')
+        col = getattr(node, 'col_offset', '?')
         msg = f"Python feature '{node_type}' is not supported yet"
         if detail: msg += f" ({detail})"
         self.context.add_warning(node, msg)
-        return f"/- {msg} -/ sorry"
+        return f"/- [Line {line}, Col {col}] {msg} -/ sorry"
 
     def _extract_doc_and_body(self, node):
         """ノードからdocstringを除去した本体ステートメントを返す"""
@@ -100,7 +102,7 @@ class LeanTranslator(ast.NodeVisitor):
             return self._format_binop(node)
         if isinstance(node, ast.UnaryOp):
             op = constants.UNARY_OPS.get(type(node.op))
-            return f"({op}{self._wrap(node.operand)})" if op else self._unsupported(node.op)
+            return f"({op}{self._wrap(node.operand)})" if op else self._unsupported(node)
         if isinstance(node, ast.BoolOp):
             op = constants.BOOL_OPS.get(type(node.op), "??")
             return f"({(f' {op} ').join([self._wrap(v) for v in node.values])})"
@@ -114,7 +116,7 @@ class LeanTranslator(ast.NodeVisitor):
         if isinstance(node.op, ast.Div):
             return f"(py_div {l} {r})"
         op = constants.BIN_OPS.get(type(node.op))
-        return f"({l} {op} {r})" if op else self._unsupported(node.op)
+        return f"({l} {op} {r})" if op else self._unsupported(node)
 
     def _format_compare(self, node):
         """連結比較 (a < b < c) を Lean の論理積に展開する"""
