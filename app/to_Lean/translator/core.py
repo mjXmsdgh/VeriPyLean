@@ -2,6 +2,7 @@ import ast
 from .. import types
 from . import constants
 from . import handlers
+from .context import CodeBuilder
 
 class LeanTranslator(ast.NodeVisitor):
     """Python ASTを走査し、再帰的にLean 4の構文へと変換するメインビジター"""
@@ -77,10 +78,22 @@ class LeanTranslator(ast.NodeVisitor):
         if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
         op = constants.BIN_OPS.get(type(node.op))
         return f"({l} {op} {r})" if op else self._unsupported(node.op)
-    def visit_IfExp(self, node): return f"if {self._v(node.test)} then {self._v(node.body)} else {self._v(node.orelse)}"
+    def visit_IfExp(self, node):
+        return f"if {self._v(node.test)} then {self._v(node.body)} else {self._v(node.orelse)}"
     def visit_If(self, node):
-        orelse = self._v(node.orelse[0]) if node.orelse else "0"
-        return f"if {self._v(node.test)} then {self._v(node.body[0])} else {orelse}"
+        builder = CodeBuilder()
+        with builder.block(f"if {self._v(node.test)} then"):
+            for s in node.body:
+                for line in self._v(s).splitlines():
+                    builder.add(line)
+        if node.orelse:
+            with builder.block("else"):
+                for s in node.orelse:
+                    for line in self._v(s).splitlines():
+                        builder.add(line)
+        else:
+            builder.add("else 0")
+        return builder.build()
     def visit_BoolOp(self, node):
         op = constants.BOOL_OPS.get(type(node.op), "??")
         return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
@@ -113,14 +126,24 @@ class LeanTranslator(ast.NodeVisitor):
     def visit_Pass(self, node): return "()"
 
     def _translate_enum(self, node):
-        variants = [f"  | {t.id}" for s in node.body if isinstance(s, ast.Assign) 
-                    for t in s.targets if isinstance(t, ast.Name)]
-        return constants.IND_TEMPLATE.format(name=node.name, items="\n".join(variants))
+        builder = CodeBuilder()
+        with builder.block(f"inductive {node.name} where"):
+            for s in node.body:
+                if isinstance(s, ast.Assign):
+                    for t in s.targets:
+                        if isinstance(t, ast.Name):
+                            builder.add(f"| {t.id}")
+        builder.add("deriving Repr, BEq")
+        return builder.build()
 
     def _translate_structure(self, node):
-        fields = [f"  {s.target.id} : {types.translate_type(s.annotation)}" 
-                  for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
-        return constants.STRUCT_TEMPLATE.format(name=node.name, items="\n".join(fields))
+        builder = CodeBuilder()
+        with builder.block(f"structure {node.name} where"):
+            for s in node.body:
+                if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
+                    builder.add(f"{s.target.id} : {types.translate_type(s.annotation)}")
+        builder.add("deriving Repr, BEq")
+        return builder.build()
 
     def _translate_list_comp_recursive(self, generators, elt):
         if not generators: return self._v(elt)
@@ -136,18 +159,32 @@ class LeanTranslator(ast.NodeVisitor):
         return f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {inner})"
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
-        body_lines = [self._v(s) for s in stmts] or ["sorry"]
-        doc_prefix = f"/-- {doc} -/\n" if doc else ""
-        if is_thm:
-            is_ret = isinstance(stmts[-1], ast.Return)
-            prop = self._v(stmts[-1].value) if is_ret else "True"
-            if is_ret: body_lines = body_lines[:-1]
-            res = f"{doc_prefix}theorem {node.name} {args} : {prop} :=\n  " + "\n  ".join(body_lines + ["by sorry"])
-        else:
-            ret_type = types.translate_type(node.returns)
-            res = f"{doc_prefix}def {node.name} {args} : {ret_type} :=\n  " + "\n  ".join(body_lines)
-        is_rec, hint = meta.get("is_recursive", False), meta.get("hint")
-        if is_rec:
-            res += f"\ntermination_by {hint}" if hint else ""
-            if not hint: res = f"-- [PyLean] Warning: No termination measure found.\n{res}"
-        return res
+        builder = CodeBuilder()
+        if doc:
+            builder.add(f"/-- {doc} -/")
+
+        is_ret = is_thm and isinstance(stmts[-1], ast.Return)
+        prop = self._v(stmts[-1].value) if is_ret else "True"
+        ret_type = types.translate_type(node.returns)
+        
+        header = f"{'theorem' if is_thm else 'def'} {node.name} {args} : {prop if is_thm else ret_type} :="
+        body_stmts = stmts[:-1] if is_ret else stmts
+
+        with builder.block(header):
+            if not body_stmts and not is_thm:
+                builder.add("sorry")
+            else:
+                for s in body_stmts:
+                    for line in self._v(s).splitlines():
+                        builder.add(line)
+                if is_thm:
+                    builder.add("by sorry")
+
+        hint = meta.get("hint")
+        if meta.get("is_recursive"):
+            if hint:
+                builder.add(f"termination_by {hint}")
+            else:
+                return f"-- [PyLean] Warning: No termination measure found.\n{builder.build()}"
+        
+        return builder.build()
