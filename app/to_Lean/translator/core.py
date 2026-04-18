@@ -71,29 +71,46 @@ class LeanTranslator(ast.NodeVisitor):
     def visit_Name(self, node): return node.id
     def visit_Attribute(self, node): return f"{self._v(node.value)}.{node.attr}"
     def visit_Return(self, node): return self._v(node.value)
-    def visit_Assert(self, node): return f"have : {self._v(node.test)} := by sorry"
+    def visit_Assert(self, node): return f"have : {self._v(node.test)} := by sorry;"
     def visit_Expr(self, node): return self._v(node.value)
     def visit_BinOp(self, node):
         l, r = self._v(node.left), self._v(node.right)
         if isinstance(node.op, ast.Div): return f"(py_div ({l}) ({r}))"
         op = constants.BIN_OPS.get(type(node.op))
         return f"({l} {op} {r})" if op else self._unsupported(node.op)
+
+    def _translate_block(self, builder, stmts, is_theorem=False):
+        """複数のステートメントをLeanのブロックとして変換し、builderに追加する共通ロジック"""
+        if not stmts:
+            builder.add("()" if not is_theorem else "True")
+            return
+
+        for i, stmt in enumerate(stmts):
+            translated = self._v(stmt)
+            # 各ステートメントの出力を1行ずつbuilderに渡す
+            for line in translated.splitlines():
+                builder.add(line)
+            
+            # 最後のステートメントが代入や表明(let/have)で終わる場合、
+            # Leanの式を完結させるためのダミー値を追加する
+            if i == len(stmts) - 1:
+                if isinstance(stmt, (ast.Assign, ast.Assert)):
+                    builder.add("()" if not is_theorem else "True")
+
     def visit_IfExp(self, node):
         return f"if {self._v(node.test)} then {self._v(node.body)} else {self._v(node.orelse)}"
+
     def visit_If(self, node):
         builder = CodeBuilder()
         with builder.block(f"if {self._v(node.test)} then"):
-            for s in node.body:
-                for line in self._v(s).splitlines():
-                    builder.add(line)
+            self._translate_block(builder, node.body)
         if node.orelse:
             with builder.block("else"):
-                for s in node.orelse:
-                    for line in self._v(s).splitlines():
-                        builder.add(line)
+                self._translate_block(builder, node.orelse)
         else:
-            builder.add("else 0")
+            builder.add("else ()")
         return builder.build()
+
     def visit_BoolOp(self, node):
         op = constants.BOOL_OPS.get(type(node.op), "??")
         return f"({(f' {op} ').join([self._v(v) for v in node.values])})"
@@ -181,12 +198,11 @@ class LeanTranslator(ast.NodeVisitor):
         with builder.block(header):
             if not body_stmts and not is_thm:
                 builder.add("sorry")
+            elif is_thm:
+                self._translate_block(builder, body_stmts, is_theorem=True)
+                builder.add(constants.THM_PROOF)
             else:
-                for s in body_stmts:
-                    for line in self._v(s).splitlines():
-                        builder.add(line)
-                if is_thm:
-                    builder.add(constants.THM_PROOF)
+                self._translate_block(builder, body_stmts, is_theorem=False)
 
         hint = meta.get("hint")
         if meta.get("is_recursive"):
