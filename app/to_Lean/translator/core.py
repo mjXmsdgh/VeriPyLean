@@ -70,7 +70,7 @@ class LeanTranslator(ast.NodeVisitor):
 
     def _format_args(self, args_node):
         """関数引数を (name : Type) の形式で結合する"""
-        return " ".join([f"({a.arg} : {types.translate_type(a.annotation)})" for a in args_node.args])
+        return " ".join([f"({a.arg} : {types.translate_type(a.annotation, self.context)})" for a in args_node.args])
 
     def _wrap(self, node, trigger_types=(ast.Call, ast.IfExp, ast.BinOp, ast.Compare)):
         """必要に応じて式を括弧で囲む"""
@@ -182,7 +182,7 @@ class LeanTranslator(ast.NodeVisitor):
         with builder.block(constants.STRUCT_HEADER.format(name=node.name)):
             for s in node.body:
                 if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name):
-                    builder.add(f"{s.target.id} : {types.translate_type(s.annotation)}")
+                    builder.add(f"{s.target.id} : {types.translate_type(s.annotation, self.context)}")
         builder.add(constants.DERIVING_FOOTER)
         return builder.build()
 
@@ -218,7 +218,7 @@ class LeanTranslator(ast.NodeVisitor):
 
         is_ret = is_thm and isinstance(stmts[-1], ast.Return)
         prop = self._v(stmts[-1].value) if is_ret else "True"
-        ret_type = types.translate_type(node.returns)
+        ret_type = types.translate_type(node.returns, self.context)
         
         if is_thm:
             header = constants.THM_HEADER.format(
