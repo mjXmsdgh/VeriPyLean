@@ -1,3 +1,5 @@
+# Marks the translator directory as a Python package.
+
+from .core import translate_to_lean
 from .analysis import analyze
-from .core import LeanTranslator, translate_to_lean
-from . import handlers
+from . import constants

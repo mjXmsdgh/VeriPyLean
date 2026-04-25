@@ -1,4 +1,5 @@
 import ast
+from .. import types
 from . import handlers
 
 class LeanTranslator(ast.NodeVisitor):
@@ -55,6 +56,37 @@ class LeanTranslator(ast.NodeVisitor):
 
     def _unsupported(self, node, msg=""):
         return f"-- [Unsupported] {type(node).__name__}: {msg}"
+
+    def _extract_doc_and_body(self, node):
+        """ノードからdocstringを除去した本体ステートメントを返す"""
+        doc = ast.get_docstring(node)
+        stmts = node.body
+        # docstringが最初の式として存在する場合、bodyから除外
+        if doc and stmts and isinstance(stmts[0], ast.Expr):
+            stmts = stmts[1:]
+        return doc, stmts
+
+    def _format_args(self, args_node):
+        """関数引数を (name : Type) の形式で結合する"""
+        return " ".join([f"({a.arg} : {types.translate_type(a.annotation, self.context)})" for a in args_node.args])
+
+    def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
+        """関数(def)または定理(theorem)の構造を組み立てる"""
+        body_lines = [self._v(s) for s in stmts] or ["sorry"]
+
+        if is_thm:
+            # 定理の場合: 最後のReturnを命題として抽出し、本体からは除く
+            is_ret = isinstance(stmts[-1], ast.Return)
+            prop = self._v(stmts[-1].value) if is_ret else "True"
+            if is_ret: body_lines = body_lines[:-1]
+            return self.emitter.format_theorem(node.name, args, prop, body_lines, doc)
+        else:
+            return self.emitter.format_function(
+                node.name, args, types.translate_type(node.returns, self.context), body_lines,
+                doc=doc,
+                termination_hint=meta.get("hint"),
+                is_recursive=meta.get("is_recursive", False)
+            )
 
 def translate_to_lean(node, context=None):
     """ASTノードをLeanコード文字列に変換する"""
