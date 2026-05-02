@@ -245,5 +245,24 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
         その場合、警告コメントが生成され、手動で `termination_by` 句を記述する必要があることを示します。
         この例では `termination_by m n` のように、辞書式順序で引数が減少することを手動で指定する必要があります。
         """
+    },
+    {
+        "name": "複利計算（Float）",
+        "code": """def compound_interest(principal: float, rate: float, time: int) -> float:
+    \"\"\"元利合計を計算する\"\"\"
+    return principal * (1 + rate) ** time""",
+        "annotation": """
+        **解説：浮動小数点数による複利計算**
+
+        Pythonの `float` 型は、Leanの `Float` 型に変換されます。
+
+        *   **`principal: float`, `rate: float`**: Leanでは `principal : Float`, `rate : Float` となります。
+        *   **`time: int`**: Leanでは `time : Int` となります。
+        *   **`1 + rate`**: `1` (Int) と `rate` (Float) の混合演算は、`preamble.py` で定義された型クラスインスタンスにより、`1` が自動的に `Float` に昇格して計算されます。
+        *   **`**` 演算子**: Pythonの累乗演算子 `**` は、Leanの `^` 演算子に変換されます。
+        *   **`Float ^ Int`**: 底が `Float` で指数が `Int` の累乗は、`preamble.py` で定義された `HPow Float Int Float` インスタンスにより正しく処理されます。これにより、`time` が負の値であっても適切な逆数計算が行われます。
+
+        この例は、Leanの型システムがPythonの柔軟な数値型をどのように型安全に扱うかを示しています。
+        """
     }
 ]
