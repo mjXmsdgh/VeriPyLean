@@ -26,7 +26,7 @@ def handle_class_def(node, v):
                     for t in s.targets if isinstance(t, ast.Name)]
         return v.emitter.format_inductive(node.name, variants)
     if kind == "structure":
-        fields = [(s.target.id, types.translate_type(s.annotation)) 
+        fields = [(s.target.id, types.translate_type(s.annotation, v.context)) 
                   for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
         return v.emitter.format_structure(node.name, fields)
     return v._unsupported(node, "Only Enums and @dataclass are supported")

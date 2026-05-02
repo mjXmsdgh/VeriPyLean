@@ -9,15 +9,19 @@ TYPE_MAP = {
     "Decimal": "Rat",
     "date": "Date",
     "None": "Unit",
-    "list": "List Int",
-    "dict": "AssocList Int Int",
+    "list": "List",
+    "List": "List",
+    "dict": "AssocList",
+    "Dict": "AssocList",
 }
 
 # ジェネリクス名の変換ルール
 GENERIC_MAP = {
     "List": "List",
+    "list": "List",
     "Optional": "Option",
     "Dict": "AssocList",
+    "dict": "AssocList",
 }
 
 def translate_type(node, context=None):
@@ -32,7 +36,11 @@ def translate_type(node, context=None):
     if isinstance(node, ast.Name):
         name = node.id
         if name in TYPE_MAP:
-            return TYPE_MAP[name]
+            lean_type = TYPE_MAP[name]
+            # List や AssocList 単体で使われた場合のデフォルト補完
+            if lean_type == "List": return "List Int"
+            if lean_type == "AssocList": return "AssocList Int Int"
+            return lean_type
         # AnalysisVisitorで収集されたクラス情報を確認
         if context and name in context.classes:
             return name
