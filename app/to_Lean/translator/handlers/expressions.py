@@ -9,10 +9,10 @@ def handle_op(node, v):
         l, r = v._wrap(node.left), v._wrap(node.right)
         # 除算は Lean 側で py_div として特殊扱い
         if isinstance(node.op, ast.Div):
-            return f"(py_div {l} {r})"
+            return v.emitter.format_binop(l, "/", r, is_div=True)
         # 定義された二項演算子マップから Lean 用のシンボルを取得
         op = constants.BIN_OPS.get(type(node.op))
-        return f"({l} {op} {r})" if op else v._unsupported(node)
+        return v.emitter.format_binop(l, op, r) if op else v._unsupported(node)
 
     # 単項演算 (-a, not a など) の処理
     if isinstance(node, ast.UnaryOp):

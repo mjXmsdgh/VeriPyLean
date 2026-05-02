@@ -38,8 +38,8 @@ class LeanEmitter:
     def format_binop(self, left, op_str, right, is_div=False):
         """二項演算を整形する"""
         if is_div:
-            return f"(py_div ({left}) ({right}))"
-        return f"({left} {op_str} {right})"
+            return f"py_div {left} {right}"
+        return f"{left} {op_str} {right}"
 
     def format_unaryop(self, op_str, operand):
         """単項演算を整形する"""

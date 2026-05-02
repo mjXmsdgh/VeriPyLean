@@ -58,7 +58,8 @@ class LeanTranslator(ast.NodeVisitor):
         """関数引数を (name : Type) の形式で結合する"""
         return " ".join([f"({a.arg} : {types.translate_type(a.annotation)})" for a in args_node.args])
 
-    def _wrap(self, node, trigger_types=(ast.Call, ast.IfExp, ast.BinOp, ast.Compare)):
+    def _wrap(self, node, trigger_types=(ast.Call, ast.IfExp, ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare)):
+
         """必要に応じて式を括弧で囲む"""
         res = self._v(node)
         if isinstance(node, trigger_types):
