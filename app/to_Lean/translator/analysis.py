@@ -29,5 +29,9 @@ class SafetyAnalyzer(ast.NodeVisitor):
             # Basic heuristic: check if the operation is guarded by a conditional check.
             # In v0.1, this can be expanded to interface with the TranslationContext 
             # to raise warnings if no safety guards (e.g., 'if b != 0') are found.
-            pass
+            if isinstance(node.right, ast.Constant) and node.right.value == 0:
+                self.context.add_warning(node, "Potential division by zero detected.")
+            elif isinstance(node.right, ast.Name):
+                # 将来的にはガード条件の有無をここでチェックする
+                self.context.add_warning(node, f"Division by variable '{node.right.id}' requires safety proof.")
         self.generic_visit(node)
