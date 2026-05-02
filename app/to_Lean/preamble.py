@@ -4,6 +4,7 @@ def generate(lean_code_body):
     """
     # 使用されている機能を判定
     uses_date = "Date" in lean_code_body
+    uses_float = "Float" in lean_code_body
     uses_div = "py_div" in lean_code_body
     uses_floor = "py_floor" in lean_code_body
     uses_ceil = "py_ceil" in lean_code_body
@@ -47,6 +48,17 @@ instance : PyDiv Float Int where
   py_div a b := a / (Float.ofInt b)
 
 def py_div {α β} [PyDiv α β] (a : α) (b : β) : Float := PyDiv.py_div a b""")
+
+    if uses_float:
+        sections.append("""-- 浮動小数点数と整数の混在演算を許可するインスタンス
+instance : HAdd Int Float Float where hAdd n f := Float.ofInt n + f
+instance : HAdd Float Int Float where hAdd f n := f + Float.ofInt n
+instance : HSub Int Float Float where hSub n f := Float.ofInt n - f
+instance : HSub Float Int Float where hSub f n := f - Float.ofInt n
+instance : HMul Int Float Float where hMul n f := Float.ofInt n * f
+instance : HMul Float Int Float where hMul f n := f * Float.ofInt n
+instance : HPow Float Int Float where hPow f n := f.pow (Float.ofInt n)
+instance : HPow Float Nat Float where hPow f n := f.pow (Float.ofInt n)""")
 
     math_helpers = []
     if uses_floor:
