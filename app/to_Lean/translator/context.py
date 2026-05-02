@@ -3,8 +3,13 @@ from ..emitter import LeanEmitter
 
 class TranslationContext:
     """
-    翻訳プロセス全体で共有されるコンテキスト情報を保持するクラス。
-    警告、エラー、型情報などを管理する。
+    翻訳プロセス全体のデータと状態を管理するコンテキストクラス。
+
+    役割:
+    - 翻訳中に発生した警告(warnings)やエラー(errors)の蓄積と保持。
+    - 関数、クラス、型情報のシンボルテーブルとしての機能。
+    - 解析フェーズ(SafetyAnalyzer)と生成フェーズ(LeanTranslator)の間での情報共有。
+    - LeanEmitterのインスタンスを保持し、コード生成の土台を提供する。
     """
     def __init__(self):
         self.warnings = []

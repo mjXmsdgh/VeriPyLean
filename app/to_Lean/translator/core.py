@@ -3,7 +3,14 @@ from .. import types
 from . import handlers
 
 class LeanTranslator(ast.NodeVisitor):
-    """Python AST を走査し、Lean 4 コードを生成するメインクラス"""
+    """
+    Python ASTを再帰的に走査し、Lean 4のソースコードへと変換するメインロジッククラス。
+
+    役割:
+    - `ast.NodeVisitor`を継承し、各ASTノードを適切なハンドラ関数へ振り分ける。
+    - 制御構造（If, Forなど）や関数定義の構造をLeanの構文へと再構成する。
+    - 型変換や演算子のマッピングを統合し、最終的なLeanコードの断片を組み立てる。
+    """
     def __init__(self, context):
         self.context = context
         # LeanEmitter は Lean の構文を文字列フォーマットするクラス

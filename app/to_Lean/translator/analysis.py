@@ -12,8 +12,12 @@ def analyze(node, context=None):
 
 class SafetyAnalyzer(ast.NodeVisitor):
     """
-    Analyzes Python AST for safety issues such as potential zero division.
-    This implements the 'Safety Check' logic mentioned in the prototype documentation.
+    Python ASTを走査し、形式検証（Leanへの変換）の前にコードの安全性を静的に解析するクラス。
+
+    役割:
+    - ゼロ除算などの実行時エラーの可能性がある箇所を特定する。
+    - ガード条件（if文など）がない危険な操作に対し、`TranslationContext`を通じて警告を発行する。
+    - 将来的に、事前条件や不変条件の不備を指摘するためのフックとして機能する。
     """
     def __init__(self, context):
         self.context = context
