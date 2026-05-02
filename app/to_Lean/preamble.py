@@ -58,7 +58,9 @@ instance : HSub Float Int Float where hSub f n := f - Float.ofInt n
 instance : HMul Int Float Float where hMul n f := Float.ofInt n * f
 instance : HMul Float Int Float where hMul f n := f * Float.ofInt n
 instance : HPow Float Int Float where hPow f n := f.pow (Float.ofInt n)
-instance : HPow Float Nat Float where hPow f n := f.pow (Float.ofInt n)""")
+instance : HPow Float Nat Float where hPow f n := f.pow (Float.ofInt n)
+instance : HPow Float Float Float where hPow f1 f2 := f1.pow f2
+instance : HPow Int Float Float where hPow n f := (Float.ofInt n).pow f""")
 
     math_helpers = []
     if uses_floor:
