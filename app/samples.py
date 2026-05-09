@@ -75,6 +75,24 @@ SAMPLES = [
         """
     },
     {
+        "name": "剰余演算と整数の性質",
+        "category": "基本文法",
+        "code": "def parity_check(n: int) -> bool:\n    is_even = (n % 2 == 0)\n    is_positive_odd = (n > 0) and (n % 2 != 0)\n    return is_even or is_positive_odd",
+        "annotation": """
+        **解説：剰余演算（%）と整数の比較**
+
+        整数（`int`）に対する剰余演算 `%` は、Lean 4の `%` 演算子にマッピングされます。
+        これを利用して、偶数・奇数の判定や、倍数のチェックなどの性質を記述できます。
+
+        Python: `n % 2 == 0`
+        Lean: `n % 2 == 0`
+
+        比較演算子（`==`, `!=`, `>`, `<`）も同様に変換され、複数の論理条件を組み合わせることも可能です。
+        
+        ※注意：負の数に対する剰余の挙動はPythonとLeanで異なる場合があるため、形式検証の際は定義の確認が重要です。
+        """
+    },
+    {
         "name": "割り算と型キャスト",
         "category": "基本文法",
         "code": "def div_example(a: int, b: int) -> float:\n    return a / b",

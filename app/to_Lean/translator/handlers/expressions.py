@@ -34,8 +34,7 @@ def handle_op(node, v):
             op = constants.COMP_OPS.get(type(op_node), "?")
             parts.append(f"({v._v(curr_left)} {op} {v._v(next_node)})")
             curr_left = next_node
-        # 1つの比較ならそのまま、複数なら && で結合
-        return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
+        return v.emitter.format_compare(parts)
 
     return v._unsupported(node)
 
