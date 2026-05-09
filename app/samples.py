@@ -24,18 +24,6 @@ SAMPLES = [
         """
     },
     {
-        "name": "型ヒントの例",
-        "code": 'def add_strings(a: str, b: str) -> str:\n    return a + b',
-        "annotation": """
-        **解説：Pythonの型ヒントの活用**
-
-        Pythonの型ヒント（例: `a: str`, `-> str`）を読み取り、Lean 4の型定義（`a : String`, `: String`）に自動的に変換します。
-
-        これにより、より正確で安全なコードを生成できます。型ヒントがない場合は、デフォルトで `Int` 型が使用されます。
-        """
-    }
-    ,
-    {
         "name": "リスト内包表記の例",
         "code": "def double_evens(numbers: list) -> list:\n    # 偶数のみを2倍する\n    return [n * 2 for n in numbers if n % 2 == 0]",
         "annotation": """
@@ -73,17 +61,6 @@ SAMPLES = [
 例： `return sum(numbers)`"""
     }
     ,
-    {
-        "name": "リストの例",
-        "code": "def list_literal_example() -> list:\n    return [10, 20, 30]",
-        "annotation": """
-        **解説：リストリテラルの変換**
-
-        Pythonのリストリテラル `[10, 20, 30]` は、Leanのリストリテラル `[10, 20, 30]` に直接変換されます。
-
-        返り値の型ヒント `-> list` を用いることで、Leanでの関数の返り値の型が `List Int` であることを示しています。
-        """
-    },
     {
         "name": "タプルの例",
         "code": "def tuple_literal_example():\n    return (1, \"two\")",
@@ -244,25 +221,6 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
 
         その場合、警告コメントが生成され、手動で `termination_by` 句を記述する必要があることを示します。
         この例では `termination_by m n` のように、辞書式順序で引数が減少することを手動で指定する必要があります。
-        """
-    },
-    {
-        "name": "複利計算（Float）",
-        "code": """def compound_interest(principal: float, rate: float, time: int) -> float:
-    \"\"\"元利合計を計算する\"\"\"
-    return principal * (1 + rate) ** time""",
-        "annotation": """
-        **解説：浮動小数点数による複利計算**
-
-        Pythonの `float` 型は、Leanの `Float` 型に変換されます。
-
-        *   **`principal: float`, `rate: float`**: Leanでは `principal : Float`, `rate : Float` となります。
-        *   **`time: int`**: Leanでは `time : Int` となります。
-        *   **`1 + rate`**: `1` (Int) と `rate` (Float) の混合演算は、`preamble.py` で定義された型クラスインスタンスにより、`1` が自動的に `Float` に昇格して計算されます。
-        *   **`**` 演算子**: Pythonの累乗演算子 `**` は、Leanの `^` 演算子に変換されます。
-        *   **`Float ^ Int`**: 底が `Float` で指数が `Int` の累乗は、`preamble.py` で定義された `HPow Float Int Float` インスタンスにより正しく処理されます。これにより、`time` が負の値であっても適切な逆数計算が行われます。
-
-        この例は、Leanの型システムがPythonの柔軟な数値型をどのように型安全に扱うかを示しています。
         """
     }
 ]
