@@ -3,24 +3,67 @@ SAMPLES = [
     {
         "name": "算術演算の例",
         "code": "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c",
-        "annotation": ""
+        "annotation": """
+        **解説：基本的な算術演算**
+
+        Pythonの基本的な演算子（`+`, `-`, `*`）は、Lean 4の対応する演算子に直接変換されます。
+        括弧による演算優先順位も正しく維持されます。
+        """
+    },
+    {
+        "name": "ローカル変数の定義",
+        "code": "def multiline_example(x: int, y: int) -> int:\n    sum_val = x + y\n    diff_val = x - y\n    return sum_val * diff_val",
+        "annotation": """
+        **解説：変数代入と let 式**
+
+        Pythonの関数内での変数代入は、Leanの `let` 式に変換されます。
+        
+        Python: `sum_val = x + y`
+        Lean: `let sum_val := x + y;`
+
+        複数のステップを持つ計算を、中間変数を使って整理して記述できます。
+        """
     },
     {
         "name": "条件式の例",
         "code": "def conditional_example(n):\n    return n if n != 0 else 1",
-        "annotation": ""
+        "annotation": """
+        **解説：条件式（三項演算子）**
+
+        Pythonの `x if condition else y` 形式の条件式は、Leanの `if condition then x else y` に変換されます。
+        """
     },
     {
-        "name": "型エラーの例",
-        "code": 'def type_error_example():\n    return "hello" + 5',
         "annotation": """
-        **解説：なぜこれがLean 4でエラーになるのか**
+        **解説：関数呼び出しの変換**
 
-        このコードは、Pythonでは実行時に `TypeError` となりますが、構文自体は有効です。
+        Pythonの関数呼び出し `func(arg1, arg2)` は、Leanの関数適用構文 `func arg1 arg2` に変換されます。
 
-        一方、正しく変換されたLean 4コード `("hello" + 5)` では、`String`型（文字列）と `Int`型（整数）の間で `+` 演算が定義されていないため、型エラーとしてコンパイル前に検出されます。
+        例:
+        Python: `min(a, b)`
+        Lean: `min a b`
+        """,
+        "code": "def call_example(a: int, b: int) -> int:\n    return min(a, b) + max(a, b)",
+        "name": "関数の呼び出し"
+    },
+    {
+        "name": "連結比較 (0 <= x < 10)",
+        "code": "def range_check(x: int) -> bool:\n    return 0 <= x < 10",
+        "annotation": """
+        **解説：連結比較演算子の展開**
 
-        これは、変換プログラムの不具合ではなく、**Lean 4の厳密な型システムによるもの**です。これにより、実行前にバグを発見できます。
+        Python特有の `a < b < c` のような連結比較は、Leanの論理積 `(a < b) && (b < c)` に展開されます。
+        """
+    },
+    {
+        "name": "割り算と型キャスト",
+        "code": "def div_example(a: int, b: int) -> float:\n    return a / b",
+        "annotation": """
+        **解説：割り算の挙動**
+
+        Pythonの `/` 演算子は常に浮動小数点数を返すため、Lean側でも強制的に `Float` として計算するように変換します。
+
+        変換結果: `((a : Float) / (b : Float))`
         """
     },
     {
@@ -70,67 +113,7 @@ SAMPLES = [
         Pythonのタプルリテラル `(1, "two")` は、Leanのタプル `(1, "two")` に変換されます。
 
         **現在の制約:**
-        現在のバージョンでは、タプルの型（例: `Int × String`）を自動で推論して関数の返り値の型に設定する機能は実装されていません。そのため、返り値の型がデフォルトの `Int` となり、生成されたLeanコードは型エラーになります。これは今後の改善点です。
-        """
-    },
-    {
-        "name": "複数行の例",
-        "code": "def multiline_example(x: int, y: int) -> int:\n    sum_val = x + y\n    diff_val = x - y\n    return sum_val * diff_val",
-        "annotation": """
-        **解説：複数行ステートメントと変数定義**
-
-        関数内の代入文は Lean の `let` 式に変換されます。
-        
-        Python:
-        ```python
-        sum_val = x + y
-        ```
-        Lean:
-        ```lean
-        let sum_val := (x + y);
-        ```
-        """
-    },
-    {
-        "name": "関数呼び出しの例",
-        "code": "def call_example(a: int, b: int) -> int:\n    return min(a, b) + max(a, b)",
-        "annotation": """
-        **解説：関数呼び出しの変換**
-
-        Pythonの関数呼び出し `func(arg1, arg2)` は、Leanの関数適用構文 `func arg1 arg2`（スペース区切り）に変換されます。
-
-        例:
-        Python: `min(a, b)`
-        Lean: `min a b`
-
-        引数が式の場合は、結合順序を保つために自動的に括弧で囲まれます。
-        """
-    },
-    {
-        "name": "割り算（Float）の例",
-        "code": "def div_example(a: int, b: int) -> float:\n    return a / b",
-        "annotation": """
-        **解説：割り算の挙動**
-
-        Pythonの `/` 演算子は常に浮動小数点数を返すため、Lean側でも強制的に `Float` として計算するように変換します。
-
-        変換結果: `((a : Float) / (b : Float))`
-
-        注意: 返り値の型ヒント `-> float` が重要です。これがないとデフォルトの `Int` が返り値の型となり、計算結果（Float）との型不一致エラーが発生します。
-        """
-    }
-    ,
-    {
-        "name": "連結比較の例",
-        "code": "def range_check(x: int) -> bool:\n    return 0 <= x < 10",
-        "annotation": """
-        **解説：連結比較演算子の展開**
-
-        Python特有の `a < b < c` のような連結比較は、Leanの論理積 `(a < b) && (b < c)` に展開されます。
-
-        例:
-        Python: `0 <= x < 10`
-        Lean: `(0 <= x) && (x < 10)`
+        現在は戻り値の型推論に制限があるため、複雑なタプルでは手動で型調整が必要な場合があります。
         """
     }
     ,
@@ -222,5 +205,21 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
         その場合、警告コメントが生成され、手動で `termination_by` 句を記述する必要があることを示します。
         この例では `termination_by m n` のように、辞書式順序で引数が減少することを手動で指定する必要があります。
         """
+    },
+    {
+        "name": "型安全性（エラーの事前検知）",
+        "code": 'def type_error_example():\n    return "hello" + 5',
+        "annotation": """
+        **解説：Leanによる強力な型チェック**
+
+        このコードは、Pythonでは実行時に `TypeError` となりますが、構文自体は有効です。
+
+        PyLeanで変換されたLeanコード `("hello" + 5)` では、コンパイラが「文字列と整数の足し算は不可能」と判断し、**実行前にエラーを報告**します。
+        """
+    },
+    {
+        "name": "（未サポート）forループ",
+        "code": "def sum_with_for_loop(numbers: list) -> int:\n    total = 0\n    for x in numbers:\n        total = total + x\n    return total",
+        "annotation": "命令的な `for` ループは現在未サポートです。`sum()` やリスト内包表記への書き換えを推奨します。"
     }
 ]
