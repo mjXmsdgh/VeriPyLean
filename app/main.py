@@ -38,10 +38,20 @@ if 'annotation' not in st.session_state:
 
 # サイドバーにサンプルボタンを配置
 st.sidebar.header("サンプル選択")
-for sample in samples.SAMPLES:
-    if st.sidebar.button(sample["name"]):
-        st.session_state.code_input = sample["code"]
-        st.session_state.annotation = sample["annotation"]
+
+# カテゴリーのリストを定義された順序で取得
+categories = []
+for s in samples.SAMPLES:
+    if s["category"] not in categories:
+        categories.append(s["category"])
+
+for category in categories:
+    with st.sidebar.expander(category, expanded=(category == "基本文法")):
+        for sample in [s for s in samples.SAMPLES if s["category"] == category]:
+            if st.button(sample["name"], key=f"btn_{sample['name']}"):
+                st.session_state.code_input = sample["code"]
+                st.session_state.annotation = sample["annotation"]
+                st.rerun()
 
 col1, col2 = st.columns(2)
 

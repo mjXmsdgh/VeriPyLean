@@ -2,6 +2,7 @@
 SAMPLES = [
     {
         "name": "算術演算の例",
+        "category": "基本文法",
         "code": "def arithmetic_example(a, b, c):\n    return (a + b) * 2 - c",
         "annotation": """
         **解説：基本的な算術演算**
@@ -12,6 +13,7 @@ SAMPLES = [
     },
     {
         "name": "ローカル変数の定義",
+        "category": "基本文法",
         "code": "def multiline_example(x: int, y: int) -> int:\n    sum_val = x + y\n    diff_val = x - y\n    return sum_val * diff_val",
         "annotation": """
         **解説：変数代入と let 式**
@@ -26,6 +28,7 @@ SAMPLES = [
     },
     {
         "name": "条件式の例",
+        "category": "基本文法",
         "code": "def conditional_example(n):\n    return n if n != 0 else 1",
         "annotation": """
         **解説：条件式（三項演算子）**
@@ -34,6 +37,7 @@ SAMPLES = [
         """
     },
     {
+        "category": "基本文法",
         "annotation": """
         **解説：関数呼び出しの変換**
 
@@ -48,6 +52,7 @@ SAMPLES = [
     },
     {
         "name": "連結比較 (0 <= x < 10)",
+        "category": "基本文法",
         "code": "def range_check(x: int) -> bool:\n    return 0 <= x < 10",
         "annotation": """
         **解説：連結比較演算子の展開**
@@ -57,6 +62,7 @@ SAMPLES = [
     },
     {
         "name": "割り算と型キャスト",
+        "category": "基本文法",
         "code": "def div_example(a: int, b: int) -> float:\n    return a / b",
         "annotation": """
         **解説：割り算の挙動**
@@ -68,6 +74,7 @@ SAMPLES = [
     },
     {
         "name": "リスト内包表記の例",
+        "category": "データ構造",
         "code": "def double_evens(numbers: list) -> list:\n    # 偶数のみを2倍する\n    return [n * 2 for n in numbers if n % 2 == 0]",
         "annotation": """
         **解説：リスト内包表記の変換**
@@ -80,6 +87,7 @@ SAMPLES = [
     },
     {
         "name": "リスト集計 (sum, len)",
+        "category": "データ構造",
         "code": "def calculate_average(numbers: list) -> float:\n    count = len(numbers)\n    if count == 0:\n        return 0.0\n    \n    total = sum(numbers)\n    return total / count",
         "annotation": """
         **解説：リスト集計関数の変換**
@@ -93,19 +101,8 @@ SAMPLES = [
         """
     },
     {
-        "name": "forループ（現在未サポート）",
-        "code": "def sum_with_for_loop(numbers: list) -> int:\n    total = 0\n    for x in numbers:\n        total = total + x\n    return total",
-        "annotation": """**解説：forループの変換について**
-
-現在、Pythonの命令的な `for` ループ（特に、ループ外の変数を更新するようなケース）からLeanの関数型コード（`fold` や再帰）への自動変換はサポートされていません。
-
-このような集計処理は、代わりに `sum()` 関数やリスト内包表記を使って表現することで、Leanに変換可能になります。
-
-例： `return sum(numbers)`"""
-    }
-    ,
-    {
         "name": "タプルの例",
+        "category": "データ構造",
         "code": "def tuple_literal_example():\n    return (1, \"two\")",
         "annotation": """
         **解説：タプルリテラルの変換**
@@ -119,6 +116,7 @@ SAMPLES = [
     ,
     {
         "name": "Decimal型の例",
+        "category": "応用（金融・計算）",
         "code": "def decimal_example() -> Decimal:\n    # 浮動小数点数では 0.1 + 0.2 != 0.3 ですが、\n    # Decimal (Leanでは Rat) なら正確に計算できます。\n    return Decimal('0.1') + Decimal('0.2')",
         "annotation": """
         **解説：Decimal型（固定小数点・有理数）のサポート**
@@ -131,6 +129,7 @@ SAMPLES = [
     },
     {
         "name": "消費税計算（Decimal）",
+        "category": "応用（金融・計算）",
         "code": "from decimal import Decimal\nimport math\n\ndef calculate_tax_floor(price: Decimal, rate: Decimal) -> int:\n    # 消費税計算（切り捨て）\n    tax = price * rate\n    return math.floor(tax)\n\ndef calculate_tax_round(price: Decimal, rate: Decimal) -> int:\n    # 消費税計算（四捨五入・偶数丸め）\n    tax = price * rate\n    return round(tax)",
         "annotation": """
         **解説：Decimal型による厳密な端数処理**
@@ -145,6 +144,7 @@ SAMPLES = [
     },
     {
         "name": "日付計算（Actual/365）",
+        "category": "応用（金融・計算）",
         "code": "from datetime import date\n\ndef day_count_act365(start: date, end: date) -> float:\n    # 日付の差分（期間）を計算\n    delta = end - start\n    # 日数 / 365.0 で年換算\n    return delta.days / 365.0",
         "annotation": """
         **解説：日付計算と構造体**
@@ -156,6 +156,7 @@ SAMPLES = [
     },
     {
         "name": "複利計算（Decimal, 累乗）",
+        "category": "応用（金融・計算）",
         "code": """from decimal import Decimal
 
 def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
@@ -174,6 +175,7 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
     },
     {
         "name": "再帰関数（停止性証明）",
+        "category": "高度な機能（再帰・証明）",
         "code": """def factorial(n: int) -> int:
     if n == 0:
         return 1
@@ -190,6 +192,7 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
     },
     {
         "name": "再帰関数（複雑なケース）",
+        "category": "高度な機能（再帰・証明）",
         "code": """def ackermann(m: int, n: int) -> int:
     if m == 0:
         return n + 1
@@ -208,6 +211,7 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
     },
     {
         "name": "型安全性（エラーの事前検知）",
+        "category": "高度な機能（再帰・証明）",
         "code": 'def type_error_example():\n    return "hello" + 5',
         "annotation": """
         **解説：Leanによる強力な型チェック**
@@ -219,7 +223,14 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
     },
     {
         "name": "（未サポート）forループ",
+        "category": "制限事項",
         "code": "def sum_with_for_loop(numbers: list) -> int:\n    total = 0\n    for x in numbers:\n        total = total + x\n    return total",
-        "annotation": "命令的な `for` ループは現在未サポートです。`sum()` やリスト内包表記への書き換えを推奨します。"
+        "annotation": """**解説：forループの変換について**
+
+現在、Pythonの命令的な `for` ループ（特に、ループ外の変数を更新するようなケース）からLeanの関数型コード（`fold` や再帰）への自動変換はサポートされていません。
+
+このような集計処理は、代わりに `sum()` 関数やリスト内包表記を使って表現することで、Leanに変換可能になります。
+
+例： `return sum(numbers)`"""
     }
 ]
