@@ -17,13 +17,13 @@ def handle_op(node, v):
     # 単項演算 (-a, not a など) の処理
     if isinstance(node, ast.UnaryOp):
         op = constants.UNARY_OPS.get(type(node.op))
-        return f"({op}{v._wrap(node.operand)})" if op else v._unsupported(node)
+        return v.emitter.format_unaryop(op, v._wrap(node.operand)) if op else v._unsupported(node)
 
     # 論理演算 (a and b, a or b) の処理
     if isinstance(node, ast.BoolOp):
         op = constants.BOOL_OPS.get(type(node.op), "??")
         # 複数の値を指定された演算子で結合
-        return f"({(f' {op} ').join([v._wrap(val) for val in node.values])})"
+        return v.emitter.format_boolop(op, [v._wrap(val) for val in node.values])
 
     # 比較演算 (a < b < c など) の処理
     if isinstance(node, ast.Compare):

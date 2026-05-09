@@ -61,6 +61,20 @@ SAMPLES = [
         """
     },
     {
+        "name": "論理演算 (and, or, not)",
+        "category": "基本文法",
+        "code": "def logic_example(a: bool, b: bool, c: bool) -> bool:\n    return (a and b) or (not c)",
+        "annotation": """
+        **解説：論理演算子**
+
+        Pythonの論理演算子（`and`, `or`, `not`）は、Lean 4の対応する演算子に変換されます。
+
+        *   `and` -> `&&`
+        *   `or` -> `||`
+        *   `not` -> `!`
+        """
+    },
+    {
         "name": "割り算と型キャスト",
         "category": "基本文法",
         "code": "def div_example(a: int, b: int) -> float:\n    return a / b",
