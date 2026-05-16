@@ -1,6 +1,6 @@
 # handlers パッケージの初期化
 
-from .expressions import handle_op, handle_list_comp
+from .expressions import handle_binop, handle_unaryop, handle_boolop, handle_compare, handle_list_comp
 
 # core.py で使用される他のハンドラも公開します
 from .calls import handle_call
