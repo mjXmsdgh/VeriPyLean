@@ -69,6 +69,19 @@ class LeanTranslator(ast.NodeVisitor):
     def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
 
     def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
+        # ステップ 5: verify_ で始まる関数をテストスイートとして処理
+        if is_thm and node.name.startswith("verify_"):
+            examples = []
+            for s in stmts:
+                if isinstance(s, ast.Assert):
+                    # assert a == b を example : a = b := rfl に変換
+                    test_str = self._v(s.test).strip("()")
+                    # Python の == を Lean の命題用 = に置換
+                    prop = test_str.replace(" == ", " = ")
+                    examples.append(self.emitter.format_example(prop))
+            if examples:
+                return "\n\n".join(examples)
+
         body_lines = [self._v(s) for s in stmts] or ["sorry"]
 
         if is_thm:

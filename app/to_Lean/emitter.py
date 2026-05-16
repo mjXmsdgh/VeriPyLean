@@ -72,6 +72,10 @@ class LeanEmitter:
                 res += f"\nelse\n  {else_part}"
         return res
 
+    def format_example(self, prop, proof="rfl"):
+        """example (値のテスト) を整形する"""
+        return f"example : {prop} := {proof}"
+
     def format_theorem(self, name, args, prop, body_lines, doc=None):
         """定理 (theorem) を整形する"""
         doc_str = self._format_doc(doc)
