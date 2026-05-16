@@ -83,10 +83,24 @@ class StatementHandler:
             ast.Expr: lambda n: v._v(n.value),
             ast.Assign: lambda n: v.emitter.format_assign(v._v(n.targets[0]), v._v(n.value)),
             ast.Assert: lambda n: v.emitter.format_assert(v._v(n.test)),
-            ast.If: lambda n: v.emitter.format_if_stmt(v._v(n.test), [v._v(s) for s in n.body], [v._v(s) for s in n.orelse] if n.orelse else ["0"]),
+            ast.If: lambda n: StatementHandler.handle_if(v, n),
             ast.FunctionDef: lambda n: StatementHandler.handle_function_def(v, n),
             ast.ClassDef: lambda n: StatementHandler.handle_class_def(v, n),
         }
+
+    @staticmethod
+    def handle_if(v, node):
+        test_str = v._v(node.test)
+        then_lines = [v._v(s) for s in node.body]
+
+        # elif の判定ロジック
+        if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
+            return v.emitter.format_if_stmt(
+                test_str, then_lines, [v._v(node.orelse[0])], is_elif=True
+            )
+
+        orelse_lines = [v._v(s) for s in node.orelse] if node.orelse else ["0"]
+        return v.emitter.format_if_stmt(test_str, then_lines, orelse_lines)
 
     @staticmethod
     def handle_function_def(v, node):

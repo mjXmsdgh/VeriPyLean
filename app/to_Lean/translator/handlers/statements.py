@@ -3,11 +3,17 @@ from ... import types
 
 def handle_if(node, v):
     """If文をLeanの if then else 構文に変換する"""
-    return v.emitter.format_if_stmt(
-        v._v(node.test),
-        [v._v(s) for s in node.body],
-        [v._v(s) for s in node.orelse] if node.orelse else ["0"]
-    )
+    test_str = v._v(node.test)
+    then_lines = [v._v(s) for s in node.body]
+
+    # elif の検出: orelse に ast.If ノードが 1 つだけ含まれている場合
+    if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
+        # ネストされた if を再帰的に処理し、is_elif=True を渡す
+        else_if_content = [v._v(node.orelse[0])]
+        return v.emitter.format_if_stmt(test_str, then_lines, else_if_content, is_elif=True)
+
+    else_lines = [v._v(s) for s in node.orelse] if node.orelse else ["0"]
+    return v.emitter.format_if_stmt(test_str, then_lines, else_lines)
 
 def handle_function_def(node, v):
     """関数定義をLeanの def または theorem に変換する"""

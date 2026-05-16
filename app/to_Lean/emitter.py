@@ -53,13 +53,17 @@ class LeanEmitter:
         """比較演算の連鎖を整形する"""
         return parts[0] if len(parts) == 1 else f"({' && '.join(parts)})"
 
-    def format_if_stmt(self, test, then_lines, else_lines):
+    def format_if_stmt(self, test, then_lines, else_lines, is_elif=False):
         """If-Else 文を整形する"""
         then_part = "\n  ".join(then_lines)
         res = f"if {test} then\n  {then_part}"
         if else_lines:
-            else_part = "\n  ".join(else_lines)
-            res += f"\nelse\n  {else_part}"
+            if is_elif:
+                # else if の場合、インデントを下げずに else に続けて if ... を出力
+                res += f"\nelse {else_lines[0]}"
+            else:
+                else_part = "\n  ".join(else_lines)
+                res += f"\nelse\n  {else_part}"
         return res
 
     def format_theorem(self, name, args, prop, body_lines, doc=None):
