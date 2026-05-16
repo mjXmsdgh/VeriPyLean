@@ -265,4 +265,19 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
 
 例： `return sum(numbers)`"""
     }
+    ,
+    {
+        "name": "段階的所得税の計算（elif）",
+        "category": "制御構造",
+        "code": "def calculate_tax(income: int) -> int:\n    \"\"\"簡易的な所得税計算\"\"\"\n    if income <= 2000:\n        return 0\n    elif income <= 5000:\n        return (income - 2000) * 0.1\n    else:\n        return 300 + (income - 5000) * 0.2",
+        "annotation": """
+        **解説：複数分岐 (elif) と有理数計算の検証**
+
+        この例は、複数の `elif` を含む複雑な制御フローと、小数が混在する計算の変換をテストします。
+
+        *   **構文変換**: Python のネストされた `if` を、Lean のフラットな `else if` 構文へ正確にマッピングします。
+        *   **数値の厳密性**: `0.1` などのリテラルは自動的に `(1/10 : Rat)` として扱われ、計算誤差を排除します。
+        *   **論理チェック**: `SafetyAnalyzer` により、条件の順序が正しいか、網羅性が保たれているかが静的に解析されます。
+        """
+    }
 ]
