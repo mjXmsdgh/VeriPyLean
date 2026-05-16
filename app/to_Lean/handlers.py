@@ -6,7 +6,11 @@ class BaseHandler:
     @staticmethod
     def get_handlers(v):
         return {
-            ast.Constant: lambda n: v.emitter.format_constant(n.value),
+            ast.Constant: lambda n: (
+                v.emitter.format_rat_constant(n.value) 
+                if isinstance(n.value, float) 
+                else v.emitter.format_constant(n.value)
+            ),
             ast.Name: lambda n: n.id,
             ast.Attribute: lambda n: v.emitter.format_attribute(v._v(n.value), n.attr),
             ast.Pass: lambda _: "()",
@@ -31,10 +35,23 @@ class ExpressionHandler:
     @staticmethod
     def handle_op(v, node):
         if isinstance(node, ast.BinOp):
-            l, r = v._v(node.left), v._v(node.right)
+            l_raw, r_raw = node.left, node.right
+            l_str, r_str = v._v(l_raw), v._v(r_raw)
+            
+            # 型キャストの挿入ロジック: 片方が Float(Rat) 定数の場合、もう片方を Rat にキャスト
+            # 簡略化のため、定数が float の場合にトリガーする
+            is_l_float = isinstance(l_raw, ast.Constant) and isinstance(l_raw.value, float)
+            is_r_float = isinstance(r_raw, ast.Constant) and isinstance(r_raw.value, float)
+
+            if is_l_float and not is_r_float:
+                r_str = f"({r_str} : Rat)"
+            elif is_r_float and not is_l_float:
+                l_str = f"({l_str} : Rat)"
+
             if isinstance(node.op, ast.Div): return v.emitter.format_binop(l, "/", r, is_div=True)
             op = constants.BIN_OPS.get(type(node.op))
-            return v.emitter.format_binop(l, op, r) if op else v._unsupported(node.op)
+            return v.emitter.format_binop(l_str, op, r_str) if op else v._unsupported(node.op)
+            
         if isinstance(node, ast.UnaryOp):
             op = constants.UNARY_OPS.get(type(node.op))
             return v.emitter.format_unaryop(op, v._v(node.operand)) if op else v._unsupported(node.op)

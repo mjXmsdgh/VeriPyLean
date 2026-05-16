@@ -1,4 +1,5 @@
 from .translator import constants
+from fractions import Fraction
 
 class LeanEmitter:
     """Lean 4 のコード文字列を生成するためのフォーマッタクラス"""
@@ -14,6 +15,11 @@ class LeanEmitter:
     def format_constant(self, value):
         """定数を整形する"""
         return f'"{value}"' if isinstance(value, str) else str(value)
+
+    def format_rat_constant(self, value: float):
+        """浮動小数点数を有理数 (Rat) 形式に整形する"""
+        f = Fraction(value).limit_denominator()
+        return f"({f.numerator}/{f.denominator} : Rat)"
 
     def format_attribute(self, value, attr):
         """属性アクセス (obj.attr) を整形する"""

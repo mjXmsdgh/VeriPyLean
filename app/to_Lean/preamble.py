@@ -62,6 +62,15 @@ instance : HPow Float Nat Float where hPow f n := f.pow (Float.ofInt n)
 instance : HPow Float Float Float where hPow f1 f2 := f1.pow f2
 instance : HPow Int Float Float where hPow n f := (Float.ofInt n).pow f""")
 
+    if uses_rat:
+        sections.append("""-- 有理数と整数の混在演算を許可するインスタンス
+instance : HAdd Int Rat Rat where hAdd n r := (n : Rat) + r
+instance : HAdd Rat Int Rat where hAdd r n := r + (n : Rat)
+instance : HSub Int Rat Rat where hSub n r := (n : Rat) - r
+instance : HSub Rat Int Rat where hSub r n := r - (n : Rat)
+instance : HMul Int Rat Rat where hMul n r := (n : Rat) * r
+instance : HMul Rat Int Rat where hMul r n := r * (n : Rat)""")
+
     math_helpers = []
     if uses_floor:
         math_helpers.append("def py_floor (x : Rat) : Int := x.floor")
