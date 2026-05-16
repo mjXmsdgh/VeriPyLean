@@ -43,34 +43,28 @@ class SafetyAnalyzer(ast.NodeVisitor):
         if-elif チェーンを解析し、条件の重複や順序の誤りによる到達不能コードを検知する。
         例: if income <= 5000: ... elif income <= 2000: ... (2000のケースは絶対に来ない)
         """
-        constraints = [] # (var_name, op_type, value) のリスト
-
+        constraints = []
         curr = node
         while isinstance(curr, ast.If):
-            test = curr.test
-            # 単純な比較式 (var op constant) のみを対象とする
-            if isinstance(test, ast.Compare) and len(test.ops) == 1:
-                left = test.left
-                op = test.ops[0]
-                right = test.comparators[0]
-
-                if isinstance(left, ast.Name) and isinstance(right, ast.Constant):
-                    var_name = left.id
-                    val = right.value
-                    
-                    if isinstance(val, (int, float)):
-                        # 過去の条件と比較
-                        for prev_var, prev_op, prev_val in constraints:
-                            if prev_var == var_name:
-                                self._check_shadowing(curr, var_name, prev_op, prev_val, op, val)
-                        
-                        constraints.append((var_name, op, val))
+            comp = self._try_extract_comparison(curr.test)
+            if comp:
+                var_name, op, val = comp
+                # 過去の条件と比較して論理的な矛盾をチェック
+                for prev_var, prev_op, prev_val in constraints:
+                    if prev_var == var_name:
+                        self._check_shadowing(curr, var_name, prev_op, prev_val, op, val)
+                constraints.append(comp)
 
             # 次の elif (orelse 内の唯一の If) へ移動
-            if len(curr.orelse) == 1 and isinstance(curr.orelse[0], ast.If):
-                curr = curr.orelse[0]
-            else:
-                break
+            curr = curr.orelse[0] if (len(curr.orelse) == 1 and isinstance(curr.orelse[0], ast.If)) else None
+
+    def _try_extract_comparison(self, test):
+        """単純な '変数 op 定数' の比較式 (var op constant) を抽出する"""
+        if (isinstance(test, ast.Compare) and len(test.ops) == 1 and
+            isinstance(test.left, ast.Name) and isinstance(test.comparators[0], ast.Constant) and
+            isinstance(test.comparators[0].value, (int, float))):
+            return test.left.id, test.ops[0], test.comparators[0].value
+        return None
 
     def _check_shadowing(self, node, var, prev_op, prev_val, curr_op, curr_val):
         """特定の演算パターンにおける shadowing (条件の包含) を検知する"""
