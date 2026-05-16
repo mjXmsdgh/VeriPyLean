@@ -40,29 +40,10 @@ def handle_op(node, v):
 
 def handle_list_comp(node, v):
     """リスト内包表記を map/flatMap/filter/filterMap の組み合わせに変換する"""
-    current_expr = v._v(node.elt)
-    # ジェネレータを逆順に処理して、内側から関数を組み立てる
+    res = v._v(node.elt)
     for i, gen in enumerate(reversed(node.generators)):
-        target = v._v(gen.target)
-        iterable = v._v(gen.iter)
-        # if 文によるフィルタ条件を抽出
         cond = " && ".join(f"({v._v(c)})" for c in gen.ifs) if gen.ifs else None
-        
-        # 最も内側のジェネレータ（元のリストの最後）
-        is_innermost = (i == 0)
-        if is_innermost:
-            if cond:
-                # 条件がある場合は filterMap を使用
-                current_expr = f"({iterable}).filterMap (fun {target} => if {cond} then some ({current_expr}) else none)"
-            else:
-                # 条件がない場合は単純な map
-                current_expr = f"({iterable}).map (fun {target} => {current_expr})"
-        else:
-            # 外側のジェネレータは flatMap でネストを解消
-            if cond:
-                # 条件がある場合は filter してから flatMap
-                current_expr = f"({iterable}).filter (fun {target} => {cond}).flatMap (fun {target} => {current_expr})"
-            else:
-                # 条件がない場合は単純な flatMap
-                current_expr = f"({iterable}).flatMap (fun {target} => {current_expr})"
-    return current_expr
+        res = v.emitter.format_list_comp_step(
+            v._v(gen.iter), v._v(gen.target), res, cond, is_innermost=(i == 0)
+        )
+    return res
