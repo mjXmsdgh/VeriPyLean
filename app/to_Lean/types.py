@@ -3,7 +3,7 @@ import ast
 # Lean 4 標準型へのマッピング
 TYPE_MAP = {
     "int": "Int",
-    "float": "Float",
+    "float": "Rat", # 金融計算の厳密性を優先し、デフォルトで有理数にマッピング
     "str": "String",
     "bool": "Bool",
     "Decimal": "Rat",

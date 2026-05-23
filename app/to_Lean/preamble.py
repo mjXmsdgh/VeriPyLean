@@ -32,22 +32,29 @@ deriving Repr, BEq, Inhabited""")
 
     if uses_div:
         sections.append("""-- Pythonの / 演算子ヘルパー
-class PyDiv (α : Type) (β : Type) where
-  py_div : α -> β -> Float
+-- 金融計算の精度維持のため、Int同士やRatが絡む除算は有理数(Rat)を返すように定義
+class PyDiv (α : Type) (β : Type) (γ : outParam Type) where
+  py_div : α -> β -> γ
 
-instance : PyDiv Int Int where
-  py_div a b := (Float.ofInt a) / (Float.ofInt b)
+instance : PyDiv Int Int Rat where
+  py_div a b := (a : Rat) / (b : Rat)
 
-instance : PyDiv Float Float where
+instance : PyDiv Float Float Float where
   py_div a b := a / b
 
-instance : PyDiv Int Float where
+instance : PyDiv Int Float Float where
   py_div a b := (Float.ofInt a) / b
 
-instance : PyDiv Float Int where
+instance : PyDiv Float Int Float where
   py_div a b := a / (Float.ofInt b)
 
-def py_div {α β} [PyDiv α β] (a : α) (b : β) : Float := PyDiv.py_div a b""")
+instance : PyDiv Rat Rat Rat where
+  py_div a b := a / b
+
+instance : PyDiv Rat Int Rat where
+  py_div a b := a / (b : Rat)
+
+def py_div {α β γ} [PyDiv α β γ] (a : α) (b : β) : γ := PyDiv.py_div a b""")
 
     if uses_float:
         sections.append("""-- 浮動小数点数と整数の混在演算を許可するインスタンス
