@@ -101,3 +101,24 @@ def calculate_net_income(entries: List[JournalEntry]) -> Decimal:
         if line.account.category == AccountCategory.EXPENSE
     ])
     return revenues - expenses
+
+def calculate_loan_balance(principal: float, monthly_payment: float, rate: float, months: int) -> float:
+    """
+    【処理概要】: 指定月数経過後のローン残高を計算する。
+    【アルゴリズム】: 
+        1. 年利(rate)を12で割り、月利を算出。
+        2. 月数分ループし、利息の加算と返済額の減算を繰り返す。
+    """
+    balance = principal
+    monthly_rate = rate / 12
+    for i in range(months):
+        interest = balance * monthly_rate
+        balance = balance + interest - monthly_payment
+    return balance
+
+def verify_loan_calculation():
+    """
+    【検証】: 100万円のローンを月利1%(年利12%)、月10万円返済で2ヶ月運用した結果を検証。
+    計算過程: (100万 * 1.01 - 10万) * 1.01 - 10万 = 819,100円
+    """
+    assert calculate_loan_balance(1000000.0, 100000.0, 0.12, 2) == 819100.0
