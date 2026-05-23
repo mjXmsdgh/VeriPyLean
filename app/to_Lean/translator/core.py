@@ -1,6 +1,6 @@
 import ast
-from .. import types
-from . import handlers
+from .. import types, handlers
+from . import constants
 
 class LeanTranslator(ast.NodeVisitor):
     """
@@ -20,27 +20,32 @@ class LeanTranslator(ast.NodeVisitor):
         
         # ASTノードタイプとハンドラの対応表
         self.dispatch = {
-            ast.Constant: lambda n, v: f'"{n.value}"' if isinstance(n.value, str) else str(n.value),
+            ast.Constant: lambda n, v: (
+                v.emitter.format_rat_constant(n.value) 
+                if isinstance(n.value, float) 
+                else v.emitter.format_constant(n.value)
+            ),
             ast.Name: lambda n, v: n.id,
-            ast.Attribute: lambda n, v: f"{v._v(n.value)}.{n.attr}",
+            ast.Attribute: lambda n, v: v.emitter.format_attribute(v._v(n.value), n.attr),
             ast.Return: lambda n, v: v._v(n.value),
             ast.Expr: lambda n, v: v._v(n.value),
-            ast.Assign: lambda n, v: f"let {v._v(n.targets[0])} := {v._v(n.value)};",
-            ast.Assert: lambda n, v: f"have : {v._v(n.test)} := by sorry",
+            ast.Assign: lambda n, v: v.emitter.format_assign(v._v(n.targets[0]), v._v(n.value)),
+            ast.AugAssign: lambda n, v: handlers.StatementHandler.handle_aug_assign(v, n),
+            ast.Assert: lambda n, v: v.emitter.format_assert(v._v(n.test)),
             ast.Pass: lambda n, v: "()",
-            ast.IfExp: lambda n, v: f"if {v._v(n.test)} then {v._v(n.body)} else {v._v(n.orelse)}",
-            ast.List: lambda n, v: f"[{', '.join([v._v(e) for e in n.elts])}]",
-            ast.Tuple: lambda n, v: f"({', '.join([v._v(e) for e in n.elts])})",
-            ast.BinOp: handlers.handle_binop,
-            ast.UnaryOp: handlers.handle_unaryop,
-            ast.BoolOp: handlers.handle_boolop,
-            ast.Compare: handlers.handle_compare,
-            ast.If: handlers.handle_if,
+            ast.IfExp: lambda n, v: v.emitter.format_if_exp(v._v(n.test), v._v(n.body), v._v(n.orelse)),
+            ast.List: lambda n, v: v.emitter.format_collection([v._v(e) for e in n.elts]),
+            ast.Tuple: lambda n, v: v.emitter.format_collection([v._v(e) for e in n.elts], "(", ")"),
+            ast.BinOp: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
+            ast.UnaryOp: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
+            ast.BoolOp: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
+            ast.Compare: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
+            ast.If: lambda n, v: handlers.StatementHandler.handle_if(v, n),
             ast.FunctionDef: self.visit_FunctionDef,
             ast.For: self.visit_For,
-            ast.ClassDef: handlers.handle_class_def,
-            ast.Call: handlers.handle_call,
-            ast.ListComp: handlers.handle_list_comp,
+            ast.ClassDef: lambda n, v: handlers.StatementHandler.handle_class_def(v, n),
+            ast.Call: lambda n, v: handlers.ExpressionHandler.handle_call(v, n),
+            ast.ListComp: lambda n, v: handlers.ExpressionHandler.handle_list_comp(v, n),
         }
 
     def visit_Module(self, node):
@@ -62,7 +67,7 @@ class LeanTranslator(ast.NodeVisitor):
         """関数定義の変換。解析情報の参照用に現在の関数名を記録する。"""
         old_func = self.current_function
         self.current_function = node.name
-        res = handlers.handle_function_def(node, self)
+        res = handlers.StatementHandler.handle_function_def(v, node)
         self.current_function = old_func
         return res
 
@@ -102,7 +107,7 @@ class LeanTranslator(ast.NodeVisitor):
             f"let rec loop (n : Nat) {typed_args} : Rat :=",
             f"  if n = 0 then {current_state}",
             f"  else",
-            f"    {'; '.join(body_lines)};",
+            f"    {chr(10).join(['    ' + line for line in body_lines])}",
             f"    loop (n - 1) {current_state}",
             f"  termination_by n"
         ]

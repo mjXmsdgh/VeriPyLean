@@ -1,5 +1,6 @@
 import ast
-from . import constants, types
+from . import types
+from .translator import constants
 
 class BaseHandler:
     """名前や定数などの基本要素のハンドラ"""
@@ -48,7 +49,7 @@ class ExpressionHandler:
             elif is_r_float and not is_l_float:
                 l_str = f"({l_str} : Rat)"
 
-            if isinstance(node.op, ast.Div): return v.emitter.format_binop(l, "/", r, is_div=True)
+            if isinstance(node.op, ast.Div): return v.emitter.format_binop(l_str, "/", r_str, is_div=True)
             op = constants.BIN_OPS.get(type(node.op))
             return v.emitter.format_binop(l_str, op, r_str) if op else v._unsupported(node.op)
             
@@ -68,7 +69,6 @@ class ExpressionHandler:
 
     @staticmethod
     def handle_call(v, node):
-        from . import handlers  # 組み込みハンドラ参照用
         fn = v._v(node.func)
         # 組み込み関数やメソッドの特殊処理を確認
         h = BUILTIN_CALL_HANDLERS.get(fn) or (isinstance(node.func, ast.Attribute) and METHOD_CALL_HANDLERS.get(node.func.attr))
@@ -99,11 +99,19 @@ class StatementHandler:
             ast.Return: lambda n: v._v(n.value),
             ast.Expr: lambda n: v._v(n.value),
             ast.Assign: lambda n: v.emitter.format_assign(v._v(n.targets[0]), v._v(n.value)),
+            ast.AugAssign: lambda n: StatementHandler.handle_aug_assign(v, n),
             ast.Assert: lambda n: v.emitter.format_assert(v._v(n.test)),
             ast.If: lambda n: StatementHandler.handle_if(v, n),
             ast.FunctionDef: lambda n: StatementHandler.handle_function_def(v, n),
             ast.ClassDef: lambda n: StatementHandler.handle_class_def(v, n),
         }
+
+    @staticmethod
+    def handle_aug_assign(v, node):
+        target = v._v(node.target)
+        op = constants.BIN_OPS.get(type(node.op), "??")
+        value = v._v(node.value)
+        return f"let {target} := {target} {op} {value};"
 
     @staticmethod
     def handle_if(v, node):
