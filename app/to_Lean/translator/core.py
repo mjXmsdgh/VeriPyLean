@@ -119,8 +119,16 @@ class LeanTranslator(ast.NodeVisitor):
             f"    loop (n - 1) {current_state_args}",
             f"  termination_by n"
         ]
-        # 初期呼び出しを最後に付ける
-        return "\n".join(res) + f"\nloop {limit_expr} {current_state_args}"
+        
+        # 初期呼び出しと状態のバインド
+        # ステップ 5: 停止性の保証と型の整合性 (Int -> Nat)
+        res_call = f"loop ({limit_expr}).toNat {current_state_args}"
+        if len(state_vars) == 1:
+            binding = f"let {state_vars[0]} := {res_call};"
+        else:
+            binding = f"let ({', '.join(state_vars)}) := {res_call};"
+
+        return "\n".join(res) + "\n" + binding
 
     def _wrap(self, node, trigger_types=(ast.IfExp, ast.BinOp)):
         """必要に応じて括弧で囲む補助関数"""
