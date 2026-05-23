@@ -94,25 +94,33 @@ class LeanTranslator(ast.NodeVisitor):
         state_vars = loop_info["state_vars"]  # ['balance'] など
         limit_expr = self._v(node.iter.args[0])
         
-        # 2. 引数リストと初期値の構築 (型は Rat をデフォルトとする)
+        # 2. 引数リスト、戻り値の型、およびベースケースの戻り値を構築
         typed_args = " ".join([f"({var} : Rat)" for var in state_vars])
-        current_state = " ".join(state_vars)
+        current_state_args = " ".join(state_vars)
+        
+        if len(state_vars) == 1:
+            base_return = state_vars[0]
+            ret_type = "Rat"
+        else:
+            base_return = f"({', '.join(state_vars)})"
+            ret_type = "(" + " × ".join(["Rat"] * len(state_vars)) + ")"
         
         # 3. ループボディの計算式を再帰呼び出しの引数へと変換
         # Pythonの副作用（代入）は、Leanでは let 式の連続として表現される
         body_lines = [self._v(stmt) for stmt in node.body]
         
         # 4. Lean 4 の let rec 構文を組み立てる
+        # ステップ 4: ベースケース（終了条件）の設定
         res = [
-            f"let rec loop (n : Nat) {typed_args} : Rat :=",
-            f"  if n = 0 then {current_state}",
+            f"let rec loop (n : Nat) {typed_args} : {ret_type} :=",
+            f"  if n = 0 then {base_return}",
             f"  else",
             f"    {chr(10).join(['    ' + line for line in body_lines])}",
-            f"    loop (n - 1) {current_state}",
+            f"    loop (n - 1) {current_state_args}",
             f"  termination_by n"
         ]
         # 初期呼び出しを最後に付ける
-        return "\n".join(res) + f"\nloop {limit_expr} {current_state}"
+        return "\n".join(res) + f"\nloop {limit_expr} {current_state_args}"
 
     def _wrap(self, node, trigger_types=(ast.IfExp, ast.BinOp)):
         """必要に応じて括弧で囲む補助関数"""
