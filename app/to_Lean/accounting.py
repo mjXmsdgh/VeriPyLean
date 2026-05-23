@@ -41,6 +41,8 @@ class JournalEntry:
     description: str
     lines: List[JournalLine]
 
+# --- 会計ユーティリティ (Rounding Logic) ---
+
 def round_amount(amount: Decimal, mode: RoundingMode, precision: int = 0) -> Decimal:
     """
     【処理概要】: 会計上のルールに基づき、金額の端数処理を行う。
@@ -64,6 +66,8 @@ def calculate_tax_amount(price: Decimal, tax_rate: Decimal, mode: RoundingMode) 
     """
     tax_raw = price * tax_rate
     return round_amount(tax_raw, mode)
+
+# --- 仕訳・元帳ロジック (Journal & Ledger Logic) ---
 
 def validate_debit_credit_balance(entry: JournalEntry) -> bool:
     """
@@ -89,20 +93,17 @@ def aggregate_account_balance(entries: List[JournalEntry], account_code: str) ->
 def calculate_net_income(entries: List[JournalEntry]) -> Decimal:
     """
     【処理概要】: 指定された仕訳群から、当該期間の純利益（収益 - 費用）を算出する。
+    【アルゴリズム】: 収益(REVENUE)をプラス、費用(EXPENSE)をマイナスとして一括集計。
     """
-    # 収益(REVENUE)の合計
-    revenues = sum([
-        line.amount for e in entries for line in e.lines 
-        if line.account.category == AccountCategory.REVENUE
+    return sum([
+        line.amount if line.account.category == AccountCategory.REVENUE else -line.amount
+        for e in entries for line in e.lines 
+        if line.account.category in (AccountCategory.REVENUE, AccountCategory.EXPENSE)
     ])
-    # 費用(EXPENSE)の合計
-    expenses = sum([
-        line.amount for e in entries for line in e.lines 
-        if line.account.category == AccountCategory.EXPENSE
-    ])
-    return revenues - expenses
 
-def calculate_loan_balance(principal: float, monthly_payment: float, rate: float, months: int) -> float:
+# --- 金融シミュレーション (Financial Simulation) ---
+
+def calculate_loan_balance(principal: Decimal, monthly_payment: Decimal, rate: Decimal, months: int) -> Decimal:
     """
     【処理概要】: 指定月数経過後のローン残高を計算する。
     【アルゴリズム】: 
@@ -121,4 +122,4 @@ def verify_loan_calculation():
     【検証】: 100万円のローンを月利1%(年利12%)、月10万円返済で2ヶ月運用した結果を検証。
     計算過程: (100万 * 1.01 - 10万) * 1.01 - 10万 = 819,100円
     """
-    assert calculate_loan_balance(1000000.0, 100000.0, 0.12, 2) == 819100.0
+    assert calculate_loan_balance(Decimal('1000000'), Decimal('100000'), Decimal('0.12'), 2) == Decimal('819100')
