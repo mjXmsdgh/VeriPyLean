@@ -13,6 +13,7 @@ class LeanTranslator(ast.NodeVisitor):
     """
     def __init__(self, context):
         self.context = context
+        self.current_function = None
         # LeanEmitter は Lean の構文を文字列フォーマットするクラス
         from ..emitter import LeanEmitter
         self.emitter = LeanEmitter(context)
@@ -35,7 +36,8 @@ class LeanTranslator(ast.NodeVisitor):
             ast.BoolOp: handlers.handle_boolop,
             ast.Compare: handlers.handle_compare,
             ast.If: handlers.handle_if,
-            ast.FunctionDef: handlers.handle_function_def,
+            ast.FunctionDef: self.visit_FunctionDef,
+            ast.For: self.visit_For,
             ast.ClassDef: handlers.handle_class_def,
             ast.Call: handlers.handle_call,
             ast.ListComp: handlers.handle_list_comp,
@@ -55,6 +57,57 @@ class LeanTranslator(ast.NodeVisitor):
     def _v(self, node):
         """再帰的な visit のエイリアス"""
         return self.visit(node)
+
+    def visit_FunctionDef(self, node, v):
+        """関数定義の変換。解析情報の参照用に現在の関数名を記録する。"""
+        old_func = self.current_function
+        self.current_function = node.name
+        res = handlers.handle_function_def(node, self)
+        self.current_function = old_func
+        return res
+
+    def visit_For(self, node, v):
+        """
+        forループをLeanの末尾再帰構造（let rec）に変換する。
+        1. 解析フェーズで特定した状態変数を引数に取る。
+        2. ループ回数を Nat のデクリメントとして表現する。
+        """
+        if not self.current_function:
+            return self._unsupported(node, "Loop outside of function scope")
+
+        # 1. 解析フェーズで取得した状態変数の情報を引き出す
+        loop_info = None
+        func_meta = self.context.functions.get(self.current_function, {})
+        for info in func_meta.get("loop_info", []):
+            if info["node"] == node:
+                loop_info = info
+                break
+
+        if not loop_info or not (isinstance(node.iter, ast.Call) and getattr(node.iter.func, 'id', '') == 'range'):
+            return self._unsupported(node, "Only simple 'for i in range(n)' loops are supported for recursion conversion")
+
+        state_vars = loop_info["state_vars"]  # ['balance'] など
+        limit_expr = self._v(node.iter.args[0])
+        
+        # 2. 引数リストと初期値の構築 (型は Rat をデフォルトとする)
+        typed_args = " ".join([f"({var} : Rat)" for var in state_vars])
+        current_state = " ".join(state_vars)
+        
+        # 3. ループボディの計算式を再帰呼び出しの引数へと変換
+        # Pythonの副作用（代入）は、Leanでは let 式の連続として表現される
+        body_lines = [self._v(stmt) for stmt in node.body]
+        
+        # 4. Lean 4 の let rec 構文を組み立てる
+        res = [
+            f"let rec loop (n : Nat) {typed_args} : Rat :=",
+            f"  if n = 0 then {current_state}",
+            f"  else",
+            f"    {'; '.join(body_lines)};",
+            f"    loop (n - 1) {current_state}",
+            f"  termination_by n"
+        ]
+        # 初期呼び出しを最後に付ける
+        return "\n".join(res) + f"\nloop {limit_expr} {current_state}"
 
     def _wrap(self, node, trigger_types=(ast.IfExp, ast.BinOp)):
         """必要に応じて括弧で囲む補助関数"""
