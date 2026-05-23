@@ -22,10 +22,72 @@ class SafetyAnalyzer(ast.NodeVisitor):
     def __init__(self, context):
         self.context = context
         self.current_guards = []
+        self.current_function = None
+        self.defined_vars = set()
 
     def analyze(self, node):
         """Starts the safety analysis on the provided AST node."""
         self.visit(node)
+
+    def visit_FunctionDef(self, node):
+        """関数のスコープを開始し、引数を定義済みリストに入れる"""
+        prev_func = self.current_function
+        prev_vars = self.defined_vars.copy()
+        
+        self.current_function = node.name
+        # 引数を定義済みに追加
+        for arg in node.args.args:
+            self.defined_vars.add(arg.arg)
+            
+        if node.name not in self.context.functions:
+            self.context.functions[node.name] = {}
+        self.context.functions[node.name]["loop_info"] = []
+
+        self.generic_visit(node)
+        
+        self.defined_vars = prev_vars
+        self.current_function = prev_func
+
+    def visit_Assign(self, node):
+        """代入された変数を現在のスコープの定義済みリストに記録する"""
+        for t in node.targets:
+            if isinstance(t, ast.Name):
+                self.defined_vars.add(t.id)
+        self.generic_visit(node)
+
+    def visit_For(self, node):
+        """ループ内で更新され、かつループ外で定義済みの変数を『状態変数』として抽出する"""
+        # 1. ループ内で代入が行われている変数を特定
+        updated_in_loop = self._find_updated_variables(node.body)
+        
+        # 2. ループ開始時点で定義済みの変数との積集合をとる
+        state_vars = updated_in_loop.intersection(self.defined_vars)
+        
+        if self.current_function:
+            self.context.functions[self.current_function]["loop_info"].append({
+                "state_vars": list(state_vars),
+                "node": node
+            })
+        
+        # 3. ループのインデックス変数も定義済みに追加
+        if isinstance(node.target, ast.Name):
+            self.defined_vars.add(node.target.id)
+            
+        self.generic_visit(node)
+
+    def _find_updated_variables(self, body):
+        """ループのボディを走査し、代入対象となっている変数名のセットを返す"""
+        updated = set()
+        for stmt in body:
+            for sub_node in ast.walk(stmt):
+                if isinstance(sub_node, ast.Assign):
+                    for target in sub_node.targets:
+                        if isinstance(target, ast.Name):
+                            updated.add(target.id)
+                elif isinstance(sub_node, ast.AugAssign):
+                    if isinstance(sub_node.target, ast.Name):
+                        updated.add(sub_node.target.id)
+        return updated
 
     def visit_If(self, node):
         """分岐の網羅性と到達可能性を解析する"""
