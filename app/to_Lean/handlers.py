@@ -35,37 +35,55 @@ class ExpressionHandler:
 
     @staticmethod
     def handle_op(v, node):
-        if isinstance(node, ast.BinOp):
-            l_raw, r_raw = node.left, node.right
-            l_str, r_str = v._v(l_raw), v._v(r_raw)
-            
-            # 型キャストの挿入ロジック: 片方が Float(Rat) 定数の場合、もう片方を Rat にキャスト
-            # 簡略化のため、定数が float の場合にトリガーする
-            is_l_float = isinstance(l_raw, ast.Constant) and isinstance(l_raw.value, float)
-            is_r_float = isinstance(r_raw, ast.Constant) and isinstance(r_raw.value, float)
+        handlers = {
+            ast.BinOp: ExpressionHandler.handle_binop,
+            ast.UnaryOp: ExpressionHandler.handle_unaryop,
+            ast.BoolOp: ExpressionHandler.handle_boolop,
+            ast.Compare: ExpressionHandler.handle_compare,
+        }
+        handler = handlers.get(type(node))
+        if handler:
+            return handler(v, node)
+        return v._unsupported(node)
 
-            if is_l_float and not is_r_float:
-                r_str = f"({r_str} : Rat)"
-            elif is_r_float and not is_l_float:
-                l_str = f"({l_str} : Rat)"
+    @staticmethod
+    def handle_binop(v, node):
+        l_raw, r_raw = node.left, node.right
+        l_str, r_str = v._v(l_raw), v._v(r_raw)
+        
+        # 型キャストの挿入ロジック: 片方が Float(Rat) 定数の場合、もう片方を Rat にキャスト
+        # 簡略化のため、定数が float の場合にトリガーする
+        is_l_float = isinstance(l_raw, ast.Constant) and isinstance(l_raw.value, float)
+        is_r_float = isinstance(r_raw, ast.Constant) and isinstance(r_raw.value, float)
 
-            if isinstance(node.op, ast.Div): return v.emitter.format_binop(l_str, "/", r_str, is_div=True)
-            op = constants.BIN_OPS.get(type(node.op))
-            return v.emitter.format_binop(l_str, op, r_str) if op else v._unsupported(node.op)
-            
-        if isinstance(node, ast.UnaryOp):
-            op = constants.UNARY_OPS.get(type(node.op))
-            return v.emitter.format_unaryop(op, v._v(node.operand)) if op else v._unsupported(node.op)
-        if isinstance(node, ast.BoolOp):
-            op = constants.BOOL_OPS.get(type(node.op), "??")
-            return v.emitter.format_boolop(op, [v._v(val) for val in node.values])
-        if isinstance(node, ast.Compare):
-            parts, curr = [], v._v(node.left)
-            for op, comp in zip(node.ops, node.comparators):
-                next_v = v._v(comp)
-                parts.append(f"({curr} {constants.COMP_OPS.get(type(op), '?')} {next_v})")
-                curr = next_v
-            return v.emitter.format_compare(parts)
+        if is_l_float and not is_r_float:
+            r_str = f"({r_str} : Rat)"
+        elif is_r_float and not is_l_float:
+            l_str = f"({l_str} : Rat)"
+
+        if isinstance(node.op, ast.Div):
+            return v.emitter.format_binop(l_str, "/", r_str, is_div=True)
+        op = constants.BIN_OPS.get(type(node.op))
+        return v.emitter.format_binop(l_str, op, r_str) if op else v._unsupported(node.op)
+
+    @staticmethod
+    def handle_unaryop(v, node):
+        op = constants.UNARY_OPS.get(type(node.op))
+        return v.emitter.format_unaryop(op, v._v(node.operand)) if op else v._unsupported(node.op)
+
+    @staticmethod
+    def handle_boolop(v, node):
+        op = constants.BOOL_OPS.get(type(node.op), "??")
+        return v.emitter.format_boolop(op, [v._v(val) for val in node.values])
+
+    @staticmethod
+    def handle_compare(v, node):
+        parts, curr = [], v._v(node.left)
+        for op, comp in zip(node.ops, node.comparators):
+            next_v = v._v(comp)
+            parts.append(f"({curr} {constants.COMP_OPS.get(type(op), '?')} {next_v})")
+            curr = next_v
+        return v.emitter.format_compare(parts)
 
     @staticmethod
     def handle_call(v, node):
