@@ -68,27 +68,49 @@ class LeanTranslator(ast.NodeVisitor):
 
     def visit_For(self, node): return "-- [PyLean] Error: for loops are not supported. Use list comprehensions or recursion."
 
-    def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
+    def _build_function_or_theorem(self, node, args, is_thm, meta):
+        doc, stmts = self._extract_doc_and_body(node)
+
         # ステップ 5: verify_ で始まる関数をテストスイートとして処理
         if is_thm and node.name.startswith("verify_"):
             examples = []
             for s in stmts:
                 if isinstance(s, ast.Assert):
-                    # assert a == b を example : a = b := rfl に変換
-                    test_str = self._v(s.test).strip("()")
-                    # Python の == を Lean の命題用 = に置換
-                    prop = test_str.replace(" == ", " = ")
-                    examples.append(self.emitter.format_example(prop))
-            if examples:
-                return "\n\n".join(examples)
+                    # s.test が Compare であり、かつ演算子が Eq の場合に安全に変換
+                    if isinstance(s.test, ast.Compare) and len(s.test.ops) == 1 and isinstance(s.test.ops[0], ast.Eq):
+                        left = self._v(s.test.left)
+                        right = self._v(s.test.comparators[0])
+                        prop = f"{left} = {right}"
+                        proof = "rfl"
+                    else:
+                        # == 以外の比較やその他の条件式の場合の安全なフォールバック
+                        prop = self._v(s.test).strip("()")
+                        proof = "sorry"
+                    examples.append(self.emitter.format_example(prop, proof=proof))
+
+            if not examples:
+                self.context.add_warning(node, f"No assert statement found in test function '{node.name}'")
+                examples.append(self.emitter.format_example("True", proof="rfl"))
+
+            return "\n\n".join(examples)
 
         body_lines = [self._v(s) for s in stmts] or ["sorry"]
 
         if is_thm:
             # 定理の場合: 最後のReturnを命題として抽出し、本体からは除く
-            is_ret = isinstance(stmts[-1], ast.Return)
-            prop = self._v(stmts[-1].value) if is_ret else "True"
-            if is_ret: body_lines = body_lines[:-1]
+            if stmts:
+                is_ret = isinstance(stmts[-1], ast.Return)
+                prop = self._v(stmts[-1].value) if is_ret else "True"
+                if is_ret:
+                    body_lines = body_lines[:-1]
+            else:
+                is_ret = False
+                prop = "True"
+
+            # 証明の本体が空になった場合（Returnしかなかった場合など）、デフォルトとして "rfl" を補う
+            if not body_lines:
+                body_lines = ["rfl"]
+
             return self.emitter.format_theorem(node.name, args, prop, body_lines, doc)
         else:
             return self.emitter.format_function(

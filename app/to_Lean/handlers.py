@@ -147,11 +147,10 @@ class StatementHandler:
 
     @staticmethod
     def handle_function_def(v, node):
-        doc, stmts = v._extract_doc_and_body(node)
         args = v._format_args(node.args)
         is_thm = node.name.startswith(("verify_", "theorem_"))
         meta = v.context.functions.get(node.name, {})
-        return v._build_function_or_theorem(node, doc, stmts, args, is_thm, meta)
+        return v._build_function_or_theorem(node, args, is_thm, meta)
 
     @staticmethod
     def handle_class_def(v, node):

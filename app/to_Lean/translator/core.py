@@ -151,15 +151,26 @@ class LeanTranslator(ast.NodeVisitor):
         """関数引数を (name : Type) の形式で結合する"""
         return " ".join([f"({a.arg} : {types.translate_type(a.annotation, self.context)})" for a in args_node.args])
 
-    def _build_function_or_theorem(self, node, doc, stmts, args, is_thm, meta):
+    def _build_function_or_theorem(self, node, args, is_thm, meta):
         """関数(def)または定理(theorem)の構造を組み立てる"""
+        doc, stmts = self._extract_doc_and_body(node)
         body_lines = [self._v(s) for s in stmts] or ["sorry"]
 
         if is_thm:
             # 定理の場合: 最後のReturnを命題として抽出し、本体からは除く
-            is_ret = isinstance(stmts[-1], ast.Return)
-            prop = self._v(stmts[-1].value) if is_ret else "True"
-            if is_ret: body_lines = body_lines[:-1]
+            if stmts:
+                is_ret = isinstance(stmts[-1], ast.Return)
+                prop = self._v(stmts[-1].value) if is_ret else "True"
+                if is_ret:
+                    body_lines = body_lines[:-1]
+            else:
+                is_ret = False
+                prop = "True"
+
+            # 証明の本体が空になった場合（Returnしかなかった場合など）、デフォルトとして "rfl" を補う
+            if not body_lines:
+                body_lines = ["rfl"]
+
             return self.emitter.format_theorem(node.name, args, prop, body_lines, doc)
         else:
             return self.emitter.format_function(

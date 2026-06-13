@@ -17,12 +17,11 @@ def handle_if(node, v):
 
 def handle_function_def(node, v):
     """関数定義をLeanの def または theorem に変換する"""
-    doc, stmts = v._extract_doc_and_body(node)
     args = v._format_args(node.args)
     is_thm = node.name.startswith(("verify_", "theorem_"))
     # context に保持されているメタ情報を取得
     meta = getattr(v.context, 'functions', {}).get(node.name, {})
-    return v._build_function_or_theorem(node, doc, stmts, args, is_thm, meta)
+    return v._build_function_or_theorem(node, args, is_thm, meta)
 
 def handle_class_def(node, v):
     """クラス定義（EnumやDataclass）をLeanの inductive または structure に変換する"""
