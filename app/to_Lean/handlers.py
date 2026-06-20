@@ -94,6 +94,31 @@ class ExpressionHandler:
             res = h(node, v)
             if res: return res
         args = [v._wrap(a, trigger_types=(ast.IfExp, ast.BinOp)) for a in node.args]
+        
+        # 呼び出し対象関数のメタデータをチェックして事前条件証明を追加
+        target_meta = v.context.functions.get(fn, {})
+        target_preconds = target_meta.get("preconditions", [])
+        if target_preconds:
+            curr_fn = v.current_function
+            curr_preconds = []
+            if curr_fn:
+                curr_meta = v.context.functions.get(curr_fn, {})
+                curr_preconds = curr_meta.get("preconditions", [])
+                is_thm = curr_fn.startswith(("verify_", "theorem_"))
+                if is_thm:
+                    target_name = curr_fn.replace("verify_", "").replace("theorem_", "")
+                    target_meta_curr = v.context.functions.get(target_name, {})
+                    curr_preconds = target_meta_curr.get("preconditions", [])
+            
+            curr_precond_strs = [v._v(cond) for cond in curr_preconds]
+            for t_cond in target_preconds:
+                t_cond_str = v._v(t_cond)
+                try:
+                    idx = curr_precond_strs.index(t_cond_str)
+                    args.append(f"h_precond_{idx}")
+                except ValueError:
+                    args.append("(by sorry)")
+        
         return fn if not args else f"{fn} {' '.join(args)}"
 
     @staticmethod

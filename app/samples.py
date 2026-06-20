@@ -279,5 +279,19 @@ def compound_interest(principal: Decimal, rate: Decimal, years: int) -> Decimal:
         *   **数値の厳密性**: `0.1` などのリテラルは自動的に `(1/10 : Rat)` として扱われ、計算誤差を排除します。
         *   **論理チェック**: `SafetyAnalyzer` により、条件の順序が正しいか、網羅性が保たれているかが静的に解析されます。
         """
+    },
+    {
+        "name": "安全性のチェックと検証（Assert文）",
+        "category": "制御構造",
+        "code": "def safe_division_rate(amount: float, divisor: float) -> float:\n    \"\"\"ゼロ除算を防ぐガード付きの計算\"\"\"\n    assert divisor > 0\n    return amount / divisor\n\ndef verify_safe_division_rate(amount: float, divisor: float):\n    return safe_division_rate(amount, divisor) == amount / divisor",
+        "annotation": """
+        **解説：Assert文による前提条件（事前条件）の検証**
+
+        Pythonの `assert` 文を用いた前提条件（ゼロ除算防止、利率がマイナスにならない、期間が0以上など）を Lean 4 に変換・検証します。
+
+        *   **事前条件の自動抽出**: 関数の引数に対する `assert divisor > 0` を解析し、Leanの関数定義の引数 `(h_precond_0 : divisor > 0)` にリフトします。
+        *   **定理への証明引き継ぎ**: 検証用の定理 `verify_safe_division_rate` においても、同じ前提条件が自動的に引数として追加されます。
+        *   **安全な呼び出しの検証**: 定理の中で `safe_division_rate` を呼び出す際、前提条件の証明引数 `h_precond_0` が自動的に渡されることで、数学的な安全性が保証されます。
+        """
     }
 ]

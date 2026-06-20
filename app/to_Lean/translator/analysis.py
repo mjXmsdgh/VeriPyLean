@@ -23,6 +23,7 @@ class SafetyAnalyzer(ast.NodeVisitor):
         self.context = context
         self.current_guards = []
         self.current_function = None
+        self.current_function_args = set()
         self.defined_vars = set()
 
     def analyze(self, node):
@@ -33,8 +34,11 @@ class SafetyAnalyzer(ast.NodeVisitor):
         """関数のスコープを開始し、引数を定義済みリストに入れる"""
         prev_func = self.current_function
         prev_vars = self.defined_vars.copy()
+        prev_args = self.current_function_args.copy()
         
         self.current_function = node.name
+        self.current_function_args = {arg.arg for arg in node.args.args}
+        
         # 引数を定義済みに追加
         for arg in node.args.args:
             self.defined_vars.add(arg.arg)
@@ -42,11 +46,25 @@ class SafetyAnalyzer(ast.NodeVisitor):
         if node.name not in self.context.functions:
             self.context.functions[node.name] = {}
         self.context.functions[node.name]["loop_info"] = []
+        self.context.functions[node.name]["preconditions"] = []
 
         self.generic_visit(node)
         
         self.defined_vars = prev_vars
         self.current_function = prev_func
+        self.current_function_args = prev_args
+
+    def visit_Assert(self, node):
+        """assert文を解析し、事前条件としての適性を判定する"""
+        if self.current_function:
+            # assertの条件式で使用されている変数を抽出
+            used_vars = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+            # 使用されている変数がすべて関数の引数である場合、事前条件として登録
+            if used_vars.issubset(self.current_function_args) and len(used_vars) > 0:
+                if "preconditions" not in self.context.functions[self.current_function]:
+                    self.context.functions[self.current_function]["preconditions"] = []
+                self.context.functions[self.current_function]["preconditions"].append(node.test)
+        self.generic_visit(node)
 
     def visit_Assign(self, node):
         """代入された変数を現在のスコープの定義済みリストに記録する"""
@@ -143,12 +161,31 @@ class SafetyAnalyzer(ast.NodeVisitor):
     def visit_BinOp(self, node):
         """Heuristic to detect division operations and verify safety guards."""
         if isinstance(node.op, (ast.Div, ast.FloorDiv)):
-            # Basic heuristic: check if the operation is guarded by a conditional check.
-            # In v0.1, this can be expanded to interface with the TranslationContext 
-            # to raise warnings if no safety guards (e.g., 'if b != 0') are found.
             if isinstance(node.right, ast.Constant) and node.right.value == 0:
                 self.context.add_warning(node, "Potential division by zero detected.")
             elif isinstance(node.right, ast.Name):
-                # 将来的にはガード条件の有無をここでチェックする
-                self.context.add_warning(node, f"Division by variable '{node.right.id}' requires safety proof.")
+                # ガード条件の有無（preconditions）を確認する
+                guarded = False
+                if self.current_function:
+                    meta = self.context.functions.get(self.current_function, {})
+                    preconds = meta.get("preconditions", [])
+                    # 定理の場合、被検証関数のpreconditionsも確認する
+                    if self.current_function.startswith(("verify_", "theorem_")):
+                        target_name = self.current_function.replace("verify_", "").replace("theorem_", "")
+                        target_meta = self.context.functions.get(target_name, {})
+                        preconds = target_meta.get("preconditions", [])
+                    
+                    for cond in preconds:
+                        if isinstance(cond, ast.Compare) and len(cond.ops) == 1:
+                            left = cond.left
+                            op = cond.ops[0]
+                            right = cond.comparators[0]
+                            if isinstance(left, ast.Name) and left.id == node.right.id:
+                                # divisor > 0 or divisor != 0 or divisor < 0 などをチェック
+                                if isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.NotEq)):
+                                    if isinstance(right, ast.Constant) and right.value == 0:
+                                        guarded = True
+                                        break
+                if not guarded:
+                    self.context.add_warning(node, f"Division by variable '{node.right.id}' requires safety proof.")
         self.generic_visit(node)

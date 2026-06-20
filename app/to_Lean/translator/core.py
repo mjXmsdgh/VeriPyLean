@@ -14,6 +14,7 @@ class LeanTranslator(ast.NodeVisitor):
     def __init__(self, context):
         self.context = context
         self.current_function = None
+        self.assert_count = 0
         # LeanEmitter は Lean の構文を文字列フォーマットするクラス
         from ..emitter import LeanEmitter
         self.emitter = LeanEmitter(context)
@@ -31,7 +32,7 @@ class LeanTranslator(ast.NodeVisitor):
             ast.Expr: lambda n, v: v._v(n.value),
             ast.Assign: lambda n, v: v.emitter.format_assign(v._v(n.targets[0]), v._v(n.value)),
             ast.AugAssign: lambda n, v: handlers.StatementHandler.handle_aug_assign(v, n),
-            ast.Assert: lambda n, v: v.emitter.format_assert(v._v(n.test)),
+            ast.Assert: lambda n, v: v.visit_Assert(n),
             ast.Pass: lambda n, v: "()",
             ast.IfExp: lambda n, v: v.emitter.format_if_exp(v._v(n.test), v._v(n.body), v._v(n.orelse)),
             ast.List: lambda n, v: v.emitter.format_collection([v._v(e) for e in n.elts]),
@@ -58,6 +59,12 @@ class LeanTranslator(ast.NodeVisitor):
         if handler:
             return handler(node, self)
         return super().visit(node)
+
+    def visit_Assert(self, node):
+        """一般のアサーションの変換"""
+        label = f"h_assert_{self.assert_count}"
+        self.assert_count += 1
+        return self.emitter.format_assert(self._v(node.test), label)
 
     def _v(self, node):
         """再帰的な visit のエイリアス"""
@@ -151,16 +158,42 @@ class LeanTranslator(ast.NodeVisitor):
         """関数引数を (name : Type) の形式で結合する"""
         return " ".join([f"({a.arg} : {types.translate_type(a.annotation, self.context)})" for a in args_node.args])
 
+    def _format_preconditions(self, func_name):
+        """関数の事前条件（定理の場合は被検証関数の事前条件）を Lean の引数形式で結合する"""
+        meta = self.context.functions.get(func_name, {})
+        preconds = meta.get("preconditions", [])
+        
+        is_thm = func_name.startswith(("verify_", "theorem_"))
+        if is_thm:
+            target_name = func_name.replace("verify_", "").replace("theorem_", "")
+            target_meta = self.context.functions.get(target_name, {})
+            preconds = target_meta.get("preconditions", [])
+
+        formatted = []
+        for i, cond_node in enumerate(preconds):
+            cond_str = self._v(cond_node)
+            formatted.append(f"(h_precond_{i} : {cond_str})")
+        return " ".join(formatted)
+
     def _build_function_or_theorem(self, node, args, is_thm, meta):
         """関数(def)または定理(theorem)の構造を組み立てる"""
         doc, stmts = self._extract_doc_and_body(node)
-        body_lines = [self._v(s) for s in stmts] or ["sorry"]
+
+        # 事前条件を引数に追加
+        precond_args = self._format_preconditions(node.name)
+        if precond_args:
+            args = f"{args} {precond_args}".strip()
+
+        preconds = meta.get("preconditions", [])
+        # 事前条件に該当する assert は本体の変換対象から除外する
+        body_stmts = [s for s in stmts if not (isinstance(s, ast.Assert) and s.test in preconds)]
+        body_lines = [self._v(s) for s in body_stmts] or ["sorry"]
 
         if is_thm:
             # 定理の場合: 最後のReturnを命題として抽出し、本体からは除く
-            if stmts:
-                is_ret = isinstance(stmts[-1], ast.Return)
-                prop = self._v(stmts[-1].value) if is_ret else "True"
+            if body_stmts:
+                is_ret = isinstance(body_stmts[-1], ast.Return)
+                prop = self._v(body_stmts[-1].value) if is_ret else "True"
                 if is_ret:
                     body_lines = body_lines[:-1]
             else:

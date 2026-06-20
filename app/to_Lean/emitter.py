@@ -29,8 +29,10 @@ class LeanEmitter:
         """変数代入 (let) を整形する"""
         return f"let {target} := {value};"
 
-    def format_assert(self, test):
+    def format_assert(self, test, label=None):
         """アサーションを整形する"""
+        if label:
+            return f"have {label} : {test} := by sorry"
         return f"have : {test} := by sorry"
 
     def format_if_exp(self, test, body, orelse):
@@ -80,6 +82,8 @@ class LeanEmitter:
         """定理 (theorem) を整形する"""
         doc_str = self._format_doc(doc)
         body = "\n  ".join(body_lines)
+        if body.strip() == "rfl":
+            return f"{doc_str}theorem {name} {args} : {prop} :=\n  rfl"
         return f"{doc_str}theorem {name} {args} : {prop} :=\n  {body}\n  by sorry"
 
     def format_function(self, name, args, ret_type, body_lines, doc=None, termination_hint=None, is_recursive=False):
