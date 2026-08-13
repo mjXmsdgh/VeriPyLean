@@ -4,11 +4,22 @@ from .calls import handle_call
 
 def handle_binop(node, v):
     """二項演算 (a + b, a / b) の処理"""
-    l, r = v._wrap(node.left), v._wrap(node.right)
+    l_raw, r_raw = node.left, node.right
+    l_str, r_str = v._v(l_raw), v._v(r_raw)
+    
+    # 型キャストの挿入ロジック: 片方が Float(Rat) 定数の場合、もう片方を Rat にキャスト
+    is_l_float = isinstance(l_raw, ast.Constant) and isinstance(l_raw.value, float)
+    is_r_float = isinstance(r_raw, ast.Constant) and isinstance(r_raw.value, float)
+
+    if is_l_float and not is_r_float:
+        r_str = f"({r_str} : Rat)"
+    elif is_r_float and not is_l_float:
+        l_str = f"({l_str} : Rat)"
+
     is_div = isinstance(node.op, ast.Div)
     op = "/" if is_div else constants.BIN_OPS.get(type(node.op))
     if not op: return v._unsupported(node)
-    return v.emitter.format_binop(l, op, r, is_div=is_div)
+    return v.emitter.format_binop(l_str, op, r_str, is_div=is_div)
 
 def handle_unaryop(node, v):
     """単項演算 (-a, not a) の処理"""
