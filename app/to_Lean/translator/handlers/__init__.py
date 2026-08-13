@@ -4,4 +4,4 @@ from .expressions import handle_binop, handle_unaryop, handle_boolop, handle_com
 
 # core.py で使用される他のハンドラも公開します
 from .calls import handle_call
-from .statements import handle_if, handle_function_def, handle_class_def
+from .statements import handle_if, handle_function_def, handle_class_def, handle_aug_assign

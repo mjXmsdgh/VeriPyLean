@@ -1,5 +1,13 @@
 import ast
+from .. import constants
 from ... import types
+
+def handle_aug_assign(node, v):
+    """累積代入 (x += y) の処理"""
+    target = v._v(node.target)
+    op = constants.BIN_OPS.get(type(node.op), "??")
+    value = v._v(node.value)
+    return f"let {target} := {target} {op} {value};"
 
 def handle_if(node, v):
     """If文をLeanの if then else 構文に変換する"""

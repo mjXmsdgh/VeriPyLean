@@ -1,6 +1,6 @@
 import ast
-from .. import types, handlers
-from . import constants
+from .. import types
+from . import constants, handlers
 
 class LeanTranslator(ast.NodeVisitor):
     """
@@ -31,22 +31,22 @@ class LeanTranslator(ast.NodeVisitor):
             ast.Return: lambda n, v: v._v(n.value),
             ast.Expr: lambda n, v: v._v(n.value),
             ast.Assign: lambda n, v: v.emitter.format_assign(v._v(n.targets[0]), v._v(n.value)),
-            ast.AugAssign: lambda n, v: handlers.StatementHandler.handle_aug_assign(v, n),
+            ast.AugAssign: lambda n, v: handlers.handle_aug_assign(n, v),
             ast.Assert: lambda n, v: v.visit_Assert(n),
             ast.Pass: lambda n, v: "()",
             ast.IfExp: lambda n, v: v.emitter.format_if_exp(v._v(n.test), v._v(n.body), v._v(n.orelse)),
             ast.List: lambda n, v: v.emitter.format_collection([v._v(e) for e in n.elts]),
             ast.Tuple: lambda n, v: v.emitter.format_collection([v._v(e) for e in n.elts], "(", ")"),
-            ast.BinOp: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
-            ast.UnaryOp: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
-            ast.BoolOp: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
-            ast.Compare: lambda n, v: handlers.ExpressionHandler.handle_op(v, n),
-            ast.If: lambda n, v: handlers.StatementHandler.handle_if(v, n),
+            ast.BinOp: lambda n, v: handlers.handle_binop(n, v),
+            ast.UnaryOp: lambda n, v: handlers.handle_unaryop(n, v),
+            ast.BoolOp: lambda n, v: handlers.handle_boolop(n, v),
+            ast.Compare: lambda n, v: handlers.handle_compare(n, v),
+            ast.If: lambda n, v: handlers.handle_if(n, v),
             ast.FunctionDef: self.visit_FunctionDef,
             ast.For: self.visit_For,
-            ast.ClassDef: lambda n, v: handlers.StatementHandler.handle_class_def(v, n),
-            ast.Call: lambda n, v: handlers.ExpressionHandler.handle_call(v, n),
-            ast.ListComp: lambda n, v: handlers.ExpressionHandler.handle_list_comp(v, n),
+            ast.ClassDef: lambda n, v: handlers.handle_class_def(n, v),
+            ast.Call: lambda n, v: handlers.handle_call(n, v),
+            ast.ListComp: lambda n, v: handlers.handle_list_comp(n, v),
         }
 
     def visit_Module(self, node):
@@ -74,7 +74,7 @@ class LeanTranslator(ast.NodeVisitor):
         """関数定義の変換。解析情報の参照用に現在の関数名を記録する。"""
         old_func = self.current_function
         self.current_function = node.name
-        res = handlers.StatementHandler.handle_function_def(v, node)
+        res = handlers.handle_function_def(node, v)
         self.current_function = old_func
         return res
 
