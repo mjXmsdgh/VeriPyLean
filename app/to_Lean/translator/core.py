@@ -137,7 +137,7 @@ class LeanTranslator(ast.NodeVisitor):
 
         return "\n".join(res) + "\n" + binding
 
-    def _wrap(self, node, trigger_types=(ast.IfExp, ast.BinOp)):
+    def _wrap(self, node, trigger_types=(ast.IfExp, ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.Call)):
         """必要に応じて括弧で囲む補助関数"""
         res = self._v(node)
         return f"({res})" if isinstance(node, trigger_types) else res
@@ -163,9 +163,12 @@ class LeanTranslator(ast.NodeVisitor):
         meta = self.context.functions.get(func_name, {})
         preconds = meta.get("preconditions", [])
         
-        is_thm = func_name.startswith(("verify_", "theorem_"))
-        if is_thm:
-            target_name = func_name.replace("verify_", "").replace("theorem_", "")
+        if func_name.startswith("verify_"):
+            target_name = func_name[len("verify_"):]
+            target_meta = self.context.functions.get(target_name, {})
+            preconds = target_meta.get("preconditions", [])
+        elif func_name.startswith("theorem_"):
+            target_name = func_name[len("theorem_"):]
             target_meta = self.context.functions.get(target_name, {})
             preconds = target_meta.get("preconditions", [])
 

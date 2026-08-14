@@ -1,24 +1,70 @@
 import ast
 from .. import constants
-from .calls import handle_call
+
+OP_PRECEDENCE = {
+    ast.Pow: 30,
+    ast.Mult: 20,
+    ast.Div: 20,
+    ast.FloorDiv: 20,
+    ast.Mod: 20,
+    ast.Add: 10,
+    ast.Sub: 10,
+}
+
+def _should_wrap_operand(parent_op, operand, is_right=False):
+    """二項演算のオペランドに括弧が必要かどうかを判定する"""
+    if isinstance(operand, (ast.IfExp, ast.BoolOp, ast.Compare)):
+        return True
+    if isinstance(operand, ast.BinOp):
+        p_prec = OP_PRECEDENCE.get(type(parent_op), 0)
+        c_prec = OP_PRECEDENCE.get(type(operand.op), 0)
+        if c_prec < p_prec:
+            return True
+        if c_prec == p_prec:
+            # 右結合の累乗 (a ** b) ** c
+            if not is_right and isinstance(parent_op, ast.Pow):
+                return True
+            # 左結合の減算・除算の右オペランド: a - (b + c), a - (b - c), a / (b * c) など
+            if is_right and isinstance(parent_op, (ast.Sub, ast.Div, ast.FloorDiv, ast.Mod)):
+                return True
+        return False
+    return False
+
+def _format_binop_operand(v, parent_op, operand, is_right=False):
+    """二項演算のオペランドを文字列化し、必要なら括弧を付与する"""
+    res = v._v(operand)
+    if _should_wrap_operand(parent_op, operand, is_right=is_right):
+        return f"({res})"
+    return res
 
 def handle_binop(node, v):
     """二項演算 (a + b, a / b) の処理"""
     l_raw, r_raw = node.left, node.right
-    l_str, r_str = v._v(l_raw), v._v(r_raw)
+    l_str = _format_binop_operand(v, node.op, l_raw, is_right=False)
+    r_str = _format_binop_operand(v, node.op, r_raw, is_right=True)
     
     # 型キャストの挿入ロジック: 片方が Float(Rat) 定数の場合、もう片方を Rat にキャスト
     is_l_float = isinstance(l_raw, ast.Constant) and isinstance(l_raw.value, float)
     is_r_float = isinstance(r_raw, ast.Constant) and isinstance(r_raw.value, float)
 
     if is_l_float and not is_r_float:
-        r_str = f"({r_str} : Rat)"
+        if not (r_str.startswith("(") and r_str.endswith(" : Rat)")):
+            r_str = f"({r_str} : Rat)"
     elif is_r_float and not is_l_float:
-        l_str = f"({l_str} : Rat)"
+        if not (l_str.startswith("(") and l_str.endswith(" : Rat)")):
+            l_str = f"({l_str} : Rat)"
 
     is_div = isinstance(node.op, ast.Div)
-    op = "/" if is_div else constants.BIN_OPS.get(type(node.op))
+    op = constants.BIN_OPS.get(type(node.op))
     if not op: return v._unsupported(node)
+
+    if is_div:
+        # py_div は関数適用なので、引数が複合式なら括弧で包む
+        if isinstance(l_raw, (ast.BinOp, ast.IfExp, ast.BoolOp, ast.Compare, ast.Call)) and not (l_str.startswith("(") and l_str.endswith(")")):
+            l_str = f"({l_str})"
+        if isinstance(r_raw, (ast.BinOp, ast.IfExp, ast.BoolOp, ast.Compare, ast.Call)) and not (r_str.startswith("(") and r_str.endswith(")")):
+            r_str = f"({r_str})"
+
     return v.emitter.format_binop(l_str, op, r_str, is_div=is_div)
 
 def handle_unaryop(node, v):

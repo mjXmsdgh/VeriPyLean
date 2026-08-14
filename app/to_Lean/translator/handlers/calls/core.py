@@ -18,7 +18,7 @@ def handle_call(node, v):
     if h:
         res = h(node, v)
         if res: return res
-    args = [v._wrap(a, trigger_types=(ast.IfExp, ast.BinOp)) for a in node.args]
+    args = [v._wrap(a, trigger_types=(ast.IfExp, ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.Call)) for a in node.args]
     
     # 呼び出し対象関数のメタデータをチェックして事前条件証明を追加
     target_meta = getattr(v.context, 'functions', {}).get(fn, {})
@@ -29,9 +29,13 @@ def handle_call(node, v):
         if curr_fn:
             curr_meta = getattr(v.context, 'functions', {}).get(curr_fn, {})
             curr_preconds = curr_meta.get("preconditions", [])
-            is_thm = curr_fn.startswith(("verify_", "theorem_"))
-            if is_thm:
-                target_name = curr_fn.replace("verify_", "").replace("theorem_", "")
+            if curr_fn.startswith("verify_"):
+                target_name = curr_fn[len("verify_"):]
+            elif curr_fn.startswith("theorem_"):
+                target_name = curr_fn[len("theorem_"):]
+            else:
+                target_name = None
+            if target_name:
                 target_meta_curr = getattr(v.context, 'functions', {}).get(target_name, {})
                 curr_preconds = target_meta_curr.get("preconditions", [])
         
