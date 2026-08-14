@@ -21,7 +21,6 @@ class SafetyAnalyzer(ast.NodeVisitor):
     """
     def __init__(self, context):
         self.context = context
-        self.current_guards = []
         self.current_function = None
         self.current_function_args = set()
         self.defined_vars = set()
@@ -29,6 +28,29 @@ class SafetyAnalyzer(ast.NodeVisitor):
     def analyze(self, node):
         """Starts the safety analysis on the provided AST node."""
         self.visit(node)
+
+    def visit_ClassDef(self, node):
+        """クラス定義を解析し、EnumまたはDataclassとしてコンテキストに登録する"""
+        is_enum = any(getattr(b, 'id', getattr(b, 'attr', '')) == 'Enum' for b in node.bases)
+        
+        is_dataclass = False
+        for dec in node.decorator_list:
+            if isinstance(dec, ast.Name) and dec.id == 'dataclass':
+                is_dataclass = True
+                break
+            elif isinstance(dec, ast.Call) and getattr(dec.func, 'id', getattr(dec.func, 'attr', '')) == 'dataclass':
+                is_dataclass = True
+                break
+            elif isinstance(dec, ast.Attribute) and dec.attr == 'dataclass':
+                is_dataclass = True
+                break
+
+        if is_enum:
+            self.context.classes[node.name] = "enum"
+        elif is_dataclass:
+            self.context.classes[node.name] = "structure"
+
+        self.generic_visit(node)
 
     def visit_FunctionDef(self, node):
         """関数のスコープを開始し、引数を定義済みリストに入れる"""
@@ -170,8 +192,13 @@ class SafetyAnalyzer(ast.NodeVisitor):
                     meta = self.context.functions.get(self.current_function, {})
                     preconds = meta.get("preconditions", [])
                     # 定理の場合、被検証関数のpreconditionsも確認する
-                    if self.current_function.startswith(("verify_", "theorem_")):
-                        target_name = self.current_function.replace("verify_", "").replace("theorem_", "")
+                    if self.current_function.startswith("verify_"):
+                        target_name = self.current_function[len("verify_"):]
+                    elif self.current_function.startswith("theorem_"):
+                        target_name = self.current_function[len("theorem_"):]
+                    else:
+                        target_name = None
+                    if target_name:
                         target_meta = self.context.functions.get(target_name, {})
                         preconds = target_meta.get("preconditions", [])
                     
@@ -180,10 +207,15 @@ class SafetyAnalyzer(ast.NodeVisitor):
                             left = cond.left
                             op = cond.ops[0]
                             right = cond.comparators[0]
+                            # divisor > 0 or divisor != 0 or divisor < 0 などをチェック
                             if isinstance(left, ast.Name) and left.id == node.right.id:
-                                # divisor > 0 or divisor != 0 or divisor < 0 などをチェック
-                                if isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.NotEq)):
+                                if isinstance(op, (ast.Gt, ast.Lt, ast.NotEq)):
                                     if isinstance(right, ast.Constant) and right.value == 0:
+                                        guarded = True
+                                        break
+                            elif isinstance(right, ast.Name) and right.id == node.right.id:
+                                if isinstance(op, (ast.Lt, ast.Gt, ast.NotEq)):
+                                    if isinstance(left, ast.Constant) and left.value == 0:
                                         guarded = True
                                         break
                 if not guarded:

@@ -41,9 +41,7 @@ def translate_type(node, context=None):
             if lean_type == "List": return "List Int"
             if lean_type == "AssocList": return "AssocList Int Int"
             return lean_type
-        # AnalysisVisitorで収集されたクラス情報を確認
-        if context and name in context.classes:
-            return name
+        # クラス情報または未登録の型名をそのまま返す
         return name
 
     # 2. ジェネリクス (List[int], Optional[float] 等)
@@ -58,8 +56,12 @@ def translate_type(node, context=None):
         if isinstance(inner_node, ast.Tuple):
             # Dict[K, V] のように複数のパラメータがある場合
             inner_types = [translate_type(elt, context) for elt in inner_node.elts]
-            return f"{lean_base} {' '.join(inner_types)}"
-        return f"{lean_base} {translate_type(inner_node, context)}"
+            inner_formatted = [f"({t})" if " " in t else t for t in inner_types]
+            return f"{lean_base} {' '.join(inner_formatted)}"
+        
+        inner_t = translate_type(inner_node, context)
+        inner_formatted = f"({inner_t})" if " " in inner_t else inner_t
+        return f"{lean_base} {inner_formatted}"
 
     # 3. 属性アクセス (datetime.date 等)
     if isinstance(node, ast.Attribute):
