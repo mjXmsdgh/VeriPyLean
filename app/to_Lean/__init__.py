@@ -1,5 +1,5 @@
 import ast
-from . import translator
+from . import translator, preamble
 
 def compile_python_to_lean(code: str):
     """
@@ -8,8 +8,10 @@ def compile_python_to_lean(code: str):
     try:
         tree = ast.parse(code)
         context = translator.analyze(tree)
-        lean_code = translator.translate_to_lean(tree, context)
-        return lean_code, context.warnings
+        lean_body = translator.translate_to_lean(tree, context)
+        preamble_str = preamble.generate(lean_body)
+        full_code = f"{preamble_str.rstrip()}\n\n{lean_body}" if preamble_str else lean_body
+        return full_code, context.warnings
     except Exception as e:
         # パースエラー等の致命的なエラー時のハンドリング
         return f"-- Error during translation: {str(e)}", [str(e)]
