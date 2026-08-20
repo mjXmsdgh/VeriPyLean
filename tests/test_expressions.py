@@ -347,6 +347,12 @@ class TestDirectHandlerInvocation(TestExpressionsBase):
         assert isinstance(node, ast.BinOp)
         self.assertEqual(handle_binop(node, self.visitor), "a + b")
 
+    def test_direct_handle_binop_division_call_operand(self):
+        """除算の右オペランドが関数呼び出しの場合のラッピング"""
+        node = self.parse_expr("1 / f(x)")
+        assert isinstance(node, ast.BinOp)
+        self.assertEqual(handle_binop(node, self.visitor), "py_div 1 (f x)")
+
     def test_direct_handle_unaryop(self):
         node = self.parse_expr("-x")
         assert isinstance(node, ast.UnaryOp)
@@ -368,5 +374,50 @@ class TestDirectHandlerInvocation(TestExpressionsBase):
         self.assertEqual(handle_list_comp(node, self.visitor), "(xs).map (fun x => x)")
 
 
+class TestExpressionsWithMockVisitor(unittest.TestCase):
+    """モック Visitor を用いた独立したハンドラ単体テスト"""
+
+    def setUp(self):
+        from unittest.mock import MagicMock
+        self.mock_v = MagicMock()
+        self.mock_v._v.side_effect = lambda node: getattr(node, "id", "dummy")
+        self.mock_v._wrap.side_effect = lambda node: getattr(node, "id", "dummy")
+        self.mock_v.emitter.format_binop.side_effect = lambda l, op, r, is_div=False: f"{l} {op} {r}"
+        self.mock_v.emitter.format_unaryop.side_effect = lambda op, val: f"({op}{val})"
+        self.mock_v.emitter.format_boolop.side_effect = lambda op, vals: f"({f' {op} '.join(vals)})"
+        self.mock_v.emitter.format_compare.side_effect = lambda parts: f"({' && '.join(parts)})"
+
+    def test_mock_handle_unaryop(self):
+        node = ast.UnaryOp(op=ast.USub(), operand=ast.Name(id="x", ctx=ast.Load()))
+        result = handle_unaryop(node, self.mock_v)
+        self.assertEqual(result, "(-x)")
+
+    def test_mock_handle_boolop_unknown_op(self):
+        """未知の BoolOp に対するフォールバック ('??')"""
+        class UnknownBoolOp(ast.boolop):
+            pass
+
+        node = ast.BoolOp(
+            op=UnknownBoolOp(),
+            values=[ast.Name(id="a", ctx=ast.Load()), ast.Name(id="b", ctx=ast.Load())],
+        )
+        result = handle_boolop(node, self.mock_v)
+        self.mock_v.emitter.format_boolop.assert_called_with("??", ["a", "b"])
+
+    def test_mock_handle_compare_unknown_op(self):
+        """未知の比較演算子に対するフォールバック ('?')"""
+        class UnknownCmpOp(ast.cmpop):
+            pass
+
+        node = ast.Compare(
+            left=ast.Name(id="a", ctx=ast.Load()),
+            ops=[UnknownCmpOp()],
+            comparators=[ast.Name(id="b", ctx=ast.Load())],
+        )
+        result = handle_compare(node, self.mock_v)
+        self.mock_v.emitter.format_compare.assert_called_with(["(a ? b)"])
+
+
 if __name__ == "__main__":
     unittest.main()
+
