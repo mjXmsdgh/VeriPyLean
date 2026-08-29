@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import ast
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .translator.context import TranslationContext
 
 # Lean 4 標準型へのマッピング
-TYPE_MAP = {
+TYPE_MAP: dict[str, str] = {
     "int": "Int",
-    "float": "Rat", # 金融計算の厳密性を優先し、デフォルトで有理数にマッピング
+    "float": "Rat",  # 金融計算の厳密性を優先し、デフォルトで有理数にマッピング
     "str": "String",
     "bool": "Bool",
     "Decimal": "Rat",
@@ -16,7 +22,7 @@ TYPE_MAP = {
 }
 
 # ジェネリクス名の変換ルール
-GENERIC_MAP = {
+GENERIC_MAP: dict[str, str] = {
     "List": "List",
     "list": "List",
     "Optional": "Option",
@@ -24,7 +30,8 @@ GENERIC_MAP = {
     "dict": "AssocList",
 }
 
-def translate_type(node, context=None):
+
+def translate_type(node: ast.AST | None, context: TranslationContext | None = None) -> str:
     """
     PythonのASTノード（型ヒント）をLean 4の型文字列に変換する。
     ジェネリクスやコンテキスト内のユーザー定義クラスの解決をサポート。
@@ -38,8 +45,10 @@ def translate_type(node, context=None):
         if name in TYPE_MAP:
             lean_type = TYPE_MAP[name]
             # List や AssocList 単体で使われた場合のデフォルト補完
-            if lean_type == "List": return "List Int"
-            if lean_type == "AssocList": return "AssocList Int Int"
+            if lean_type == "List":
+                return "List Int"
+            if lean_type == "AssocList":
+                return "AssocList Int Int"
             return lean_type
         # クラス情報または未登録の型名をそのまま返す
         return name
@@ -49,7 +58,7 @@ def translate_type(node, context=None):
         # 基底型 (List等) を取得
         base_name = getattr(node.value, "id", "")
         lean_base = GENERIC_MAP.get(base_name, translate_type(node.value, context))
-        
+
         # 内包される型 (T) を再帰的に解決
         # Python 3.9+ の AST 構造に対応 (node.slice が直接ノード)
         inner_node = node.slice
@@ -58,7 +67,7 @@ def translate_type(node, context=None):
             inner_types = [translate_type(elt, context) for elt in inner_node.elts]
             inner_formatted = [f"({t})" if " " in t else t for t in inner_types]
             return f"{lean_base} {' '.join(inner_formatted)}"
-        
+
         inner_t = translate_type(inner_node, context)
         inner_formatted = f"({inner_t})" if " " in inner_t else inner_t
         return f"{lean_base} {inner_formatted}"

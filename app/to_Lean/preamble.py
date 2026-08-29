@@ -1,4 +1,7 @@
-def generate(lean_code_body):
+from __future__ import annotations
+
+
+def generate(lean_code_body: str) -> str:
     """
     Leanコードの先頭に追加するヘルパー関数や定義（プリアンブル）を生成する
     """
@@ -14,13 +17,13 @@ def generate(lean_code_body):
     uses_rat = "Rat" in lean_code_body or uses_floor or uses_ceil or uses_round or uses_half_up
 
     # インポート文の構築
-    imports = ["import Lean"]
+    imports: list[str] = ["import Lean"]
     if uses_rat:
         imports.append("import Mathlib.Data.Rat.Basic")
         imports.append("import Mathlib.Data.Rat.Floor")
 
     # 定義本体の構築
-    sections = []
+    sections: list[str] = []
 
     if uses_date:
         sections.append("""-- Pythonのdatetime.date互換の構造体
@@ -78,7 +81,7 @@ instance : HSub Rat Int Rat where hSub r n := r - (n : Rat)
 instance : HMul Int Rat Rat where hMul n r := (n : Rat) * r
 instance : HMul Rat Int Rat where hMul r n := r * (n : Rat)""")
 
-    math_helpers = []
+    math_helpers: list[str] = []
     if uses_floor:
         math_helpers.append("def py_floor (x : Rat) : Int := x.floor")
     if uses_ceil:
