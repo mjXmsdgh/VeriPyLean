@@ -1,6 +1,14 @@
+from __future__ import annotations
+
 import ast
+from typing import TYPE_CHECKING, Any, Callable
+
 from .. import types
 from . import constants, handlers
+
+if TYPE_CHECKING:
+    from ..emitter import LeanEmitter
+    from .context import TranslationContext
 
 class LeanTranslator(ast.NodeVisitor):
     """
@@ -11,16 +19,22 @@ class LeanTranslator(ast.NodeVisitor):
     - 制御構造（If, Forなど）や関数定義の構造をLeanの構文へと再構成する。
     - 型変換や演算子のマッピングを統合し、最終的なLeanコードの断片を組み立てる。
     """
-    def __init__(self, context):
-        self.context = context
-        self.current_function = None
-        self.assert_count = 0
+    context: TranslationContext
+    current_function: str | None
+    assert_count: int
+    emitter: LeanEmitter
+    dispatch: dict[type[ast.AST], Callable[..., Any]]
+
+    def __init__(self, context: TranslationContext) -> None:
+        self.context: TranslationContext = context
+        self.current_function: str | None = None
+        self.assert_count: int = 0
         # LeanEmitter は Lean の構文を文字列フォーマットするクラス
         from ..emitter import LeanEmitter
-        self.emitter = LeanEmitter(context)
+        self.emitter: LeanEmitter = LeanEmitter(context)
         
         # ASTノードタイプとハンドラの対応表
-        self.dispatch = {
+        self.dispatch: dict[type[ast.AST], Callable[..., Any]] = {
             ast.Constant: lambda n, v: (
                 v.emitter.format_rat_constant(n.value) 
                 if isinstance(n.value, float) 
@@ -49,41 +63,48 @@ class LeanTranslator(ast.NodeVisitor):
             ast.ListComp: lambda n, v: handlers.handle_list_comp(n, v),
         }
 
-    def visit_Module(self, node):
+    def visit_Module(self, node: ast.Module) -> str:
         """ルートノード: 全てのステートメントを変換して結合する"""
         return "\n\n".join(filter(None, [self.visit(stmt) for stmt in node.body]))
 
-    def visit(self, node):
+    def visit(self, node: ast.AST) -> Any:
         """ノードの種類に応じてハンドラを呼び出す"""
         handler = self.dispatch.get(type(node))
         if handler:
             return handler(node, self)
         return super().visit(node)
 
-    def visit_Assert(self, node):
+    def visit_Assert(self, node: ast.Assert) -> str:
         """一般のアサーションの変換"""
         label = f"h_assert_{self.assert_count}"
         self.assert_count += 1
         return self.emitter.format_assert(self._v(node.test), label)
 
-    def _v(self, node):
+    def _v(self, node: ast.AST | None) -> str:
         """再帰的な visit のエイリアス"""
-        return self.visit(node)
+        if node is None:
+            return ""
+        res = self.visit(node)
+        return str(res) if res is not None else ""
 
-    def visit_FunctionDef(self, node, v):
+    def visit_FunctionDef(self, node: ast.FunctionDef, v: LeanTranslator | None = None) -> str:
         """関数定義の変換。解析情報の参照用に現在の関数名を記録する。"""
+        if v is None:
+            v = self
         old_func = self.current_function
         self.current_function = node.name
-        res = handlers.handle_function_def(node, v)
+        res: str = handlers.handle_function_def(node, v)
         self.current_function = old_func
         return res
 
-    def visit_For(self, node, v):
+    def visit_For(self, node: ast.For, v: LeanTranslator | None = None) -> str:
         """
         forループをLeanの末尾再帰構造（let rec）に変換する。
         1. 解析フェーズで特定した状態変数を引数に取る。
         2. ループ回数を Nat のデクリメントとして表現する。
         """
+        if v is None:
+            v = self
         if not self.current_function:
             return self._unsupported(node, "Loop outside of function scope")
 
@@ -137,15 +158,26 @@ class LeanTranslator(ast.NodeVisitor):
 
         return "\n".join(res) + "\n" + binding
 
-    def _wrap(self, node, trigger_types=(ast.IfExp, ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.Call)):
+    def _wrap(
+        self,
+        node: ast.AST,
+        trigger_types: tuple[type[ast.AST], ...] = (
+            ast.IfExp,
+            ast.BinOp,
+            ast.UnaryOp,
+            ast.BoolOp,
+            ast.Compare,
+            ast.Call,
+        ),
+    ) -> str:
         """必要に応じて括弧で囲む補助関数"""
         res = self._v(node)
         return f"({res})" if isinstance(node, trigger_types) else res
 
-    def _unsupported(self, node, msg=""):
+    def _unsupported(self, node: ast.AST, msg: str = "") -> str:
         return f"-- [Unsupported] {type(node).__name__}: {msg}"
 
-    def _extract_doc_and_body(self, node):
+    def _extract_doc_and_body(self, node: ast.FunctionDef) -> tuple[str | None, list[ast.stmt]]:
         """ノードからdocstringを除去した本体ステートメントを返す"""
         doc = ast.get_docstring(node)
         stmts = node.body
@@ -154,11 +186,11 @@ class LeanTranslator(ast.NodeVisitor):
             stmts = stmts[1:]
         return doc, stmts
 
-    def _format_args(self, args_node):
+    def _format_args(self, args_node: ast.arguments) -> str:
         """関数引数を (name : Type) の形式で結合する"""
         return " ".join([f"({a.arg} : {types.translate_type(a.annotation, self.context)})" for a in args_node.args])
 
-    def _format_preconditions(self, func_name):
+    def _format_preconditions(self, func_name: str) -> str:
         """関数の事前条件（定理の場合は被検証関数の事前条件）を Lean の引数形式で結合する"""
         meta = self.context.functions.get(func_name, {})
         preconds = meta.get("preconditions", [])
@@ -178,7 +210,13 @@ class LeanTranslator(ast.NodeVisitor):
             formatted.append(f"(h_precond_{i} : {cond_str})")
         return " ".join(formatted)
 
-    def _build_function_or_theorem(self, node, args, is_thm, meta):
+    def _build_function_or_theorem(
+        self,
+        node: ast.FunctionDef,
+        args: str,
+        is_thm: bool,
+        meta: dict[str, Any],
+    ) -> str:
         """関数(def)または定理(theorem)の構造を組み立てる"""
         doc, stmts = self._extract_doc_and_body(node)
 
@@ -195,12 +233,13 @@ class LeanTranslator(ast.NodeVisitor):
         if is_thm:
             # 定理の場合: 最後のReturnを命題として抽出し、本体からは除く
             if body_stmts:
-                is_ret = isinstance(body_stmts[-1], ast.Return)
-                prop = self._v(body_stmts[-1].value) if is_ret else "True"
-                if is_ret:
+                last_stmt = body_stmts[-1]
+                if isinstance(last_stmt, ast.Return):
+                    prop = self._v(last_stmt.value) if last_stmt.value is not None else "True"
                     body_lines = body_lines[:-1]
+                else:
+                    prop = "True"
             else:
-                is_ret = False
                 prop = "True"
 
             # 証明の本体が空になった場合（Returnしかなかった場合など）、デフォルトとして "rfl" を補う
@@ -216,7 +255,7 @@ class LeanTranslator(ast.NodeVisitor):
                 is_recursive=meta.get("is_recursive", False)
             )
 
-def translate_to_lean(node, context=None):
+def translate_to_lean(node: ast.AST, context: TranslationContext | None = None) -> str:
     """ASTノードをLeanコード文字列に変換する"""
     if context is None:
         from .context import TranslationContext
