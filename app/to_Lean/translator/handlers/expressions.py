@@ -1,7 +1,14 @@
+from __future__ import annotations
+
 import ast
+from typing import TYPE_CHECKING
+
 from .. import constants
 
-OP_PRECEDENCE = {
+if TYPE_CHECKING:
+    from ..core import LeanTranslator
+
+OP_PRECEDENCE: dict[type[ast.operator], int] = {
     ast.Pow: 30,
     ast.Mult: 20,
     ast.Div: 20,
@@ -11,7 +18,7 @@ OP_PRECEDENCE = {
     ast.Sub: 10,
 }
 
-def _should_wrap_operand(parent_op, operand, is_right=False):
+def _should_wrap_operand(parent_op: ast.operator, operand: ast.AST, is_right: bool = False) -> bool:
     """二項演算のオペランドに括弧が必要かどうかを判定する"""
     if isinstance(operand, (ast.IfExp, ast.BoolOp, ast.Compare)):
         return True
@@ -30,14 +37,14 @@ def _should_wrap_operand(parent_op, operand, is_right=False):
         return False
     return False
 
-def _format_binop_operand(v, parent_op, operand, is_right=False):
+def _format_binop_operand(v: LeanTranslator, parent_op: ast.operator, operand: ast.AST, is_right: bool = False) -> str:
     """二項演算のオペランドを文字列化し、必要なら括弧を付与する"""
     res = v._v(operand)
     if _should_wrap_operand(parent_op, operand, is_right=is_right):
         return f"({res})"
     return res
 
-def handle_binop(node, v):
+def handle_binop(node: ast.BinOp, v: LeanTranslator) -> str:
     """二項演算 (a + b, a / b) の処理"""
     l_raw, r_raw = node.left, node.right
     l_str = _format_binop_operand(v, node.op, l_raw, is_right=False)
@@ -67,17 +74,17 @@ def handle_binop(node, v):
 
     return v.emitter.format_binop(l_str, op, r_str, is_div=is_div)
 
-def handle_unaryop(node, v):
+def handle_unaryop(node: ast.UnaryOp, v: LeanTranslator) -> str:
     """単項演算 (-a, not a) の処理"""
     op = constants.UNARY_OPS.get(type(node.op))
     return v.emitter.format_unaryop(op, v._wrap(node.operand)) if op else v._unsupported(node)
 
-def handle_boolop(node, v):
+def handle_boolop(node: ast.BoolOp, v: LeanTranslator) -> str:
     """論理演算 (a and b) の処理"""
     op = constants.BOOL_OPS.get(type(node.op), "??")
     return v.emitter.format_boolop(op, [v._wrap(val) for val in node.values])
 
-def handle_compare(node, v):
+def handle_compare(node: ast.Compare, v: LeanTranslator) -> str:
     """比較演算 (a < b < c) の処理"""
     ops = [constants.COMP_OPS.get(type(o), "?") for o in node.ops]
     vals = [node.left] + node.comparators
@@ -85,7 +92,7 @@ def handle_compare(node, v):
     parts = [f"({v._v(vals[i])} {ops[i]} {v._v(vals[i+1])})" for i in range(len(ops))]
     return v.emitter.format_compare(parts)
 
-def handle_list_comp(node, v):
+def handle_list_comp(node: ast.ListComp, v: LeanTranslator) -> str:
     """リスト内包表記を map/flatMap/filter/filterMap の組み合わせに変換する"""
     res = v._v(node.elt)
     for i, gen in enumerate(reversed(node.generators)):
