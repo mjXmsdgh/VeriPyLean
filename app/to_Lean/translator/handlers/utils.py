@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 import ast
 
-def get_parent_if(node, tree):
+def get_parent_if(node: ast.AST, tree: ast.AST) -> ast.If | None:
     """
     指定されたノードを包んでいる ast.If ノードを探して返す（ガード条件の特定に使用）
     """
     # 簡易的な実装: 実際には NodeVisitor や parent 指向の解析が必要
     return None
 
-def is_guarded_by_zero_check(node, var_name):
+def is_guarded_by_zero_check(node: ast.AST, var_name: str) -> bool:
     """
     変数 var_name が 0 でないことを確認する if 文の中で node が実行されているか判定する
     """
@@ -16,7 +18,7 @@ def is_guarded_by_zero_check(node, var_name):
     # 2. その test 属性が 'var_name != 0' や 'var_name > 0' であるかを確認する
     return False
 
-def get_full_name(node):
+def get_full_name(node: ast.AST) -> str | None:
     """ast.Name や ast.Attribute から完全な変数名を取得する"""
     if isinstance(node, ast.Name):
         return node.id
