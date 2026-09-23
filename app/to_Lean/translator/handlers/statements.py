@@ -1,15 +1,22 @@
+from __future__ import annotations
+
 import ast
+from typing import TYPE_CHECKING
+
 from .. import constants
 from ... import types
 
-def handle_aug_assign(node, v):
+if TYPE_CHECKING:
+    from ..core import LeanTranslator
+
+def handle_aug_assign(node: ast.AugAssign, v: LeanTranslator) -> str:
     """累積代入 (x += y) の処理"""
     target = v._v(node.target)
     op = constants.BIN_OPS.get(type(node.op), "??")
     value = v._v(node.value)
     return f"let {target} := {target} {op} {value};"
 
-def handle_if(node, v):
+def handle_if(node: ast.If, v: LeanTranslator) -> str:
     """If文をLeanの if then else 構文に変換する"""
     test_str = v._v(node.test)
     then_lines = [v._v(s) for s in node.body]
@@ -23,7 +30,7 @@ def handle_if(node, v):
     else_lines = [v._v(s) for s in node.orelse] if node.orelse else ["0"]
     return v.emitter.format_if_stmt(test_str, then_lines, else_lines)
 
-def handle_function_def(node, v):
+def handle_function_def(node: ast.FunctionDef, v: LeanTranslator) -> str:
     """関数定義をLeanの def または theorem に変換する"""
     args = v._format_args(node.args)
     is_thm = node.name.startswith(("verify_", "theorem_"))
@@ -31,7 +38,7 @@ def handle_function_def(node, v):
     meta = getattr(v.context, 'functions', {}).get(node.name, {})
     return v._build_function_or_theorem(node, args, is_thm, meta)
 
-def handle_class_def(node, v):
+def handle_class_def(node: ast.ClassDef, v: LeanTranslator) -> str:
     """クラス定義（EnumやDataclass）をLeanの inductive または structure に変換する"""
     kind = getattr(v.context, 'classes', {}).get(node.name)
     if kind == "enum":
