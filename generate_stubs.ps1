@@ -27,8 +27,8 @@ if (Test-Path $outputDir) {
     Remove-Item -Recurse -Force $outputDir
 }
 
-# Run stubgen via python entrypoint
-& $pythonExe -c "import mypy.stubgen; mypy.stubgen.main()" --parse-only --include-private --include-docstrings -p app -o $outputDir
+# Run stubgen via python entrypoint (removed --parse-only to allow semantic analysis for proper Enum member definitions)
+& $pythonExe -c "import mypy.stubgen; mypy.stubgen.main()" --include-private --include-docstrings -p app -o $outputDir
 
 if ($LASTEXITCODE -eq 0) {
     $stubCount = (Get-ChildItem -Path $outputDir -Recurse -Filter "*.pyi").Count
