@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import ast
 
 # Lean 4 の演算子へのマッピング
-BIN_OPS = {
+BIN_OPS: dict[type[ast.operator], str] = {
     ast.Add: "+",
     ast.Sub: "-",
     ast.Mult: "*",
@@ -11,18 +13,18 @@ BIN_OPS = {
     ast.Pow: "^",
 }
 
-UNARY_OPS = {
+UNARY_OPS: dict[type[ast.unaryop], str] = {
     ast.UAdd: "+",
     ast.USub: "-",
     ast.Not: "!",
 }
 
-BOOL_OPS = {
+BOOL_OPS: dict[type[ast.boolop], str] = {
     ast.And: "&&",
     ast.Or: "||",
 }
 
-COMP_OPS = {
+COMP_OPS: dict[type[ast.cmpop], str] = {
     ast.Eq: "==",
     ast.NotEq: "!=",
     ast.Lt: "<",
@@ -31,4 +33,4 @@ COMP_OPS = {
     ast.GtE: ">=",
 }
 
-DOC_TEMPLATE = "/-- {doc} -/"
+DOC_TEMPLATE: str = "/-- {doc} -/"

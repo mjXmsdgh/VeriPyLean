@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 # --- サンプルコードと解説の定義 ---
-SAMPLES = [
+SAMPLES: list[dict[str, str]] = [
     {
         "name": "算術演算の例",
         "category": "基本文法",

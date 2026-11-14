@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import ast
+from typing import Any
 from ..emitter import LeanEmitter
 
 class TranslationContext:
@@ -11,7 +14,13 @@ class TranslationContext:
     - 解析フェーズ(SafetyAnalyzer)と生成フェーズ(LeanTranslator)の間での情報共有。
     - LeanEmitterのインスタンスを保持し、コード生成の土台を提供する。
     """
-    def __init__(self):
+    warnings: list[str]
+    errors: list[str]
+    functions: dict[str, dict[str, Any]]
+    classes: dict[str, str]
+    emitter: LeanEmitter
+
+    def __init__(self) -> None:
         self.warnings = []
         self.errors = []
         self.functions = {}
@@ -19,5 +28,6 @@ class TranslationContext:
         self.emitter = LeanEmitter(self) # LeanEmitter は context を必要とする
         # 今後、型情報、変数スコープ、ユーザー定義型などの情報をここに追加する
 
-    def add_warning(self, node: ast.AST, message: str):
-        self.warnings.append(f"Warning at line {node.lineno}: {message}")
+    def add_warning(self, node: ast.AST, message: str) -> None:
+        lineno = getattr(node, "lineno", "?")
+        self.warnings.append(f"Warning at line {lineno}: {message}")
