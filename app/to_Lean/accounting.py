@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from decimal import Decimal, ROUND_HALF_UP
 import math
 from datetime import date
@@ -117,7 +119,7 @@ def calculate_loan_balance(principal: Decimal, monthly_payment: Decimal, rate: D
         balance = balance + interest - monthly_payment
     return balance
 
-def verify_loan_calculation():
+def verify_loan_calculation() -> None:
     """
     【検証】: 100万円のローンを月利1%(年利12%)、月10万円返済で2ヶ月運用した結果を検証。
     計算過程: (100万 * 1.01 - 10万) * 1.01 - 10万 = 819,100円

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 import os
 import streamlit as st
@@ -5,7 +7,7 @@ import to_Lean as toLean
 import samples
 
 # --- 描画ロジックの分離 ---
-def render_lean_view(code_input):
+def render_lean_view(code_input: str) -> None:
     st.subheader("Lean 4 View")
     try:
         # 変換ロジック呼び出し（UI非依存）
@@ -28,38 +30,41 @@ def render_lean_view(code_input):
     except Exception as e:
         st.error(f"解析エラー: {e}")
 
-# --- Streamlit UI 部分 ---
-st.title("PyLean Prototype")
-st.caption("PythonをLean 4へリアルタイム変換")
+# --- Streamlit UI メイン関数 ---
+def main() -> None:
+    st.title("PyLean Prototype")
+    st.caption("PythonをLean 4へリアルタイム変換")
 
-# セッション状態で入力コードを管理
-if 'annotation' not in st.session_state:
-    st.session_state.annotation = ""
+    # セッション状態で入力コードを管理
+    if 'annotation' not in st.session_state:
+        st.session_state.annotation = ""
 
-# サイドバーにサンプルボタンを配置
-st.sidebar.header("サンプル選択")
+    # サイドバーにサンプルボタンを配置
+    st.sidebar.header("サンプル選択")
 
-# カテゴリーのリストを定義された順序で取得
-categories = []
-for s in samples.SAMPLES:
-    if s["category"] not in categories:
-        categories.append(s["category"])
+    # カテゴリーのリストを定義された順序で取得
+    categories: list[str] = []
+    for s in samples.SAMPLES:
+        if s["category"] not in categories:
+            categories.append(s["category"])
 
-for category in categories:
-    with st.sidebar.expander(category, expanded=(category == "基本文法")):
-        for sample in [s for s in samples.SAMPLES if s["category"] == category]:
-            if st.button(sample["name"], key=f"btn_{sample['name']}"):
-                st.session_state.code_input = sample["code"]
-                st.session_state.annotation = sample["annotation"]
-                st.rerun()
+    for category in categories:
+        with st.sidebar.expander(category, expanded=(category == "基本文法")):
+            for sample in [s for s in samples.SAMPLES if s["category"] == category]:
+                if st.button(sample["name"], key=f"btn_{sample['name']}"):
+                    st.session_state.code_input = sample["code"]
+                    st.session_state.annotation = sample["annotation"]
+                    st.rerun()
 
-col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-with col1:
-    st.subheader("Python View")
+    with col1:
+        st.subheader("Python View")
 
-    code_input = st.text_area("Pythonコードを入力してください", 
-                               key="code_input", height=200)
+        code_input = st.text_area("Pythonコードを入力してください", 
+                                   key="code_input", height=200)
 
-with col2:
-    render_lean_view(code_input)
+    with col2:
+        render_lean_view(code_input)
+
+main()
